@@ -1,4 +1,4 @@
-# PiVOT
+# PiVOT :unicorn:
 This is a Generic Object Tracking Project.  
 
 ## Getting started
@@ -95,7 +95,7 @@ This codebase is implemented on [PyTracking](https://github.com/visionml/pytrack
 
 ## Citing PiVOT
 
-If you find this repository useful, please consider giving a star :star: and citation :t-rex::
+If you find this repository useful, please consider giving a star :star: and citation :thumbsup:
 
 ```
 @article{pivot2024tmm,
