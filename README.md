@@ -32,6 +32,7 @@ Run the installation script to install all the dependencies.
 You need to provide the conda install path and the name for the created conda environment  
 ```bash
 bash install_PiVOT.sh /your_anaconda3_path/ got_pivot
+conda activate got_pivot
 ```  
 
 #### Set Up the Dataset Environment
