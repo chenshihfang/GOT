@@ -68,7 +68,6 @@ The pretrained model can be downloaded from [here](https://drive.google.com/driv
    ```bash
    CUDA_VISIBLE_DEVICES=0 python pytracking/run_experiment.py myexperiments_pivot pivot --debug 0 --threads 1
 
-
 ### Training
 
 1. First, set the parameter `self.infer` to `False` in:
