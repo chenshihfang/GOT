@@ -1,0 +1,1 @@
+from .resnet import resnet50, dinov2
