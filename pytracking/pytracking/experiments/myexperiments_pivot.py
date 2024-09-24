@@ -14,8 +14,7 @@ def pivot():
 
     ####################################
 
-    dataset = get_dataset('avist')
-    # dataset = get_dataset('nfs')
+    dataset = get_dataset('nfs')
 
     print("pivot eva load")
 
