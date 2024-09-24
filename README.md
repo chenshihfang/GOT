@@ -1,9 +1,13 @@
 # PiVOT :unicorn:
 This is a Generic Object Tracking Project.  
 
+
 ## Getting started
 
 This is the official repository for "Improving Visual Object Tracking through Visual Prompting."
+
+### Raw Results
+The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1E0GUaat7rpBiqlRrfDpEgTXlD7GJEyQE?usp=sharing). 
 
 ### :fire: One GOT paper accepted at TMM 2024! 👇
 * [Improving Visual Object Tracking through Visual Prompting](https://drive.google.com/file/d/1W6ghQ-GChYSERjvf5CGYkSsx6oa1p6lx/view?usp=sharing) | **Code available!**
@@ -43,11 +47,6 @@ There are two different `local.py` files located in:
 
 - `ltr/admin`
 - `pytracking/evaluation`
-
-
-### Raw Results
-The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1E0GUaat7rpBiqlRrfDpEgTXlD7GJEyQE?usp=sharing). 
-
 
 ### Evaluate the Tracking Performance Based on Datasets
 
