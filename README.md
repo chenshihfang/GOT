@@ -22,7 +22,7 @@ Familiarity with the PyTracking codebase will help in understanding the structur
 
 #### Clone the GIT repository.  
 ```bash
-git clone https://github.com/sfchen94/got-pivot.git
+git clone https://github.com/chenshihfang/got-pivot.git
 ```  
 
 Ensure that CUDA 11.7 is installed.
