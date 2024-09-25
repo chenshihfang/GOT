@@ -11,6 +11,19 @@ This is the official repository for "Improving Visual Object Tracking through Vi
 ### Raw Results
 The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1E0GUaat7rpBiqlRrfDpEgTXlD7GJEyQE?usp=sharing). 
 
+| Dataset | Model         | AUC   | OP50  | OP75  | Precision |  NPr  |
+|---------|---------------|:-----:|:-----:|:-----:|:---------:|:-----:|
+| NFS     | ToMP-50       | 66.86 | 84.36 | 53.50 |   80.58   | 84.00 |
+|         | PiVOT-L-27    | 68.22 | 86.05 | 55.45 |   84.53   | 86.66 |
+| OTB     | ToMP-50       | 70.07 | 87.83 | 57.79 |   90.83   | 85.98 |
+|         | PiVOT-L-27    | 71.20 | 89.35 | 55.73 |   94.58   | 88.46 |
+| UAV     | ToMP-50       | 68.97 | 83.84 | 64.63 |   89.70   | 84.79 |
+|         | PiVOT-L-27    | 70.66 | 85.69 | 67.06 |   91.80   | 86.74 |
+| LaSOT   | ToMP-50       | 67.57 | 79.79 | 65.06 |   72.24   | 77.98 |
+|         | PiVOT-L-27    | 73.37 | 85.64 | 75.18 |   82.09   | 84.68 |
+| AVIST   | ToMP-50       | 51.61 | 59.47 | 38.88 |   47.74   | 66.66 |
+|         | PiVOT-L-27    | 62.18 | 73.25 | 55.46 |   65.55   | 81.20 |
+
 
 ## Prerequisites
 
