@@ -5,8 +5,9 @@ def parameters():
     params = TrackerParams()
 
     ### pivot params
-    params.simvThr = 0.25 
-    params.newimSimThr = 85
+    ### These are tunable hyperparameters that can be adjusted for each independent machine to improve performance.
+    params.simvThr = 0.25 # (e.g. 0.30)
+    params.newimSimThr = 85 # (e.g. 0.80)
 
     ### tomp params
     params.debug = 0
