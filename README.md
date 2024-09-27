@@ -29,7 +29,7 @@ The raw results can be downloaded from [here](https://drive.google.com/drive/fol
 |         | PiVOT-L       | 88.46 | 71.20 |   94.58   | 89.35 | 55.73 |
 
 Suc: Success Rate  
-Pr: Normalise Precision  
+Pr:  Precision  
 NPr: Normalise Precision  
 
 ## Prerequisites
