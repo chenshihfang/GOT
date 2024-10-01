@@ -2,11 +2,14 @@
 This is a Generic Object Tracking Project.  
 
 ### :fire: PiVOT has been accepted at TMM 2024! 👇
-* [Improving Visual Object Tracking through Visual Prompting](https://drive.google.com/file/d/1W6ghQ-GChYSERjvf5CGYkSsx6oa1p6lx/view?usp=sharing) | **Code available!**
+* [Improving Visual Object Tracking through Visual Prompting](https://arxiv.org/abs/2409.18901) | **Code available!**
 
 ## Getting started
 
-This is the official repository for "Improving Visual Object Tracking through Visual Prompting."
+This is the official repository for "Improving Visual Object Tracking through Visual Prompting."  
+
+> PiVOT proposes a prompt generation network with the pre-trained foundation model CLIP to automatically generate and refine visual prompts, 
+enabling the transfer of foundation model knowledge for tracking.
 
 ### Raw Results
 The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1E0GUaat7rpBiqlRrfDpEgTXlD7GJEyQE?usp=sharing). 
