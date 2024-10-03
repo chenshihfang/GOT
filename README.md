@@ -1,3 +1,5 @@
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/improving-visual-object-tracking-through/visual-object-tracking-on-avist)](https://paperswithcode.com/sota/visual-object-tracking-on-avist?p=improving-visual-object-tracking-through)
+
 # PiVOT :unicorn:
 This is a Generic Object Tracking Project.  
 
