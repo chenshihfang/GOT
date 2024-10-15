@@ -127,6 +127,7 @@ title={Improving Visual Object Tracking through Visual Prompting},
 author={Chen, Shih-Fang and Chen, Jun-Cheng and Jhuo, I-Hong and Lin, Yen-Yu},
 journal={IEEE Trans. Multimedia (TMM)},
 year={2024},
+note={Early Access},
 publisher={IEEE}
 }
 ```
