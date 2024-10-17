@@ -119,8 +119,19 @@ This codebase is implemented on [PyTracking](https://github.com/visionml/pytrack
 
 ## Citing PiVOT
 
-If you find this repository useful, please consider giving a star :star: and citation :thumbsup:
+If you find this repository useful, please consider giving a star :star: and a citation
 
+
+```
+@inproceedings{got2024pivot,
+title     = {Improving Visual Object Tracking through Visual Prompting},
+author    = {Shih-Fang Chen and Jun-Cheng Chen and I-Hong Jhuo and Yen-Yu Lin},
+booktitle = {Proc. {arXiv:2409.18901}},
+year      = {2024}
+}
+```
+
+We will update the DOI for TMM after TMM announces it.
 ```
 @article{pivot2024tmm,
 title={Improving Visual Object Tracking through Visual Prompting},
