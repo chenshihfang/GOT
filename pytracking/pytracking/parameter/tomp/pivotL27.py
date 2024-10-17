@@ -4,11 +4,12 @@ from pytracking.features.net_wrappers import NetWithBackbone
 def parameters():
     params = TrackerParams()
 
-    ### pivot params
-    ### These are tunable hyperparameters that can be adjusted for each independent machine to improve performance.
+    ### pivot tunable params
+    ### These tunable hyperparameters can be adjusted for each independent machine to improve performance.
     params.simvThr = 0.25 # (e.g. 0.30)
     params.newimSimThr = 85 # (e.g. 0.80)
-
+    params.maxCanNum = 7 # Maximize candidate feed to CLIP, ranked by top N
+ 
     ### tomp params
     params.debug = 0
     params.visualization = False
@@ -44,11 +45,10 @@ def parameters():
     params.augmentation_expansion_factor = 2
     params.random_shift_factor = 1/3
 
-    # other parameters
+    # pivot other parameters
     params.bg_info = 0
-    params.use_SRmask = 1
-    params.maxCanNum = 7
-    params.refine = 1
+    params.use_SRmask = 1 # Inactivate to run without prompting
+    params.refine = 1 # Inactivate to run without CLIP
 
     # Advanced localization parameters
     params.advanced_localization = True
