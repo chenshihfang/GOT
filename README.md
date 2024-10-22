@@ -136,9 +136,7 @@ We will update the DOI for TMM after TMM announces it.
 @article{pivot2024tmm,
 title={Improving Visual Object Tracking through Visual Prompting},
 author={Chen, Shih-Fang and Chen, Jun-Cheng and Jhuo, I-Hong and Lin, Yen-Yu},
-journal={IEEE Trans. Multimedia (TMM)},
-year={2024},
-note={Early Access},
+note={to appear in IEEE Transactions on Multimedia},
 publisher={IEEE}
 }
 ```
