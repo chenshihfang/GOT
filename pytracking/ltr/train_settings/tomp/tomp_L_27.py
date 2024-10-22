@@ -53,7 +53,11 @@ def run(settings):
     # Train datasets
     lasot_train = Lasot(settings.env.lasot_dir, split='train')
     got10k_train = Got10k(settings.env.got10k_dir, split='vottrain')
-    trackingnet_train = TrackingNet(settings.env.trackingnet_dir, set_ids=None)
+
+    # It is fine to use subsets 0-4 only, with minimal performance impact on our validation.
+    # trackingnet_train = TrackingNet(settings.env.trackingnet_dir, set_ids=list(range(4)))
+    trackingnet_train = TrackingNet(settings.env.trackingnet_dir, set_ids=None) 
+
     # coco_train = MSCOCOSeq(settings.env.coco_dir)
     coco_train = MSCOCOSeq(settings.env.coco17_dir)
 
