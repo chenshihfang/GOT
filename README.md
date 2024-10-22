@@ -139,5 +139,4 @@ author={Chen, Shih-Fang and Chen, Jun-Cheng and Jhuo, I-Hong and Lin, Yen-Yu},
 note={To appear in IEEE Transactions on Multimedia},
 publisher={IEEE}
 }
-}
 ```
