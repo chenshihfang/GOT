@@ -131,12 +131,12 @@ year      = {2024}
 }
 ```
 
-We will update the DOI for TMM after TMM announces it.
 ```
 @misc{PiVOT,
 title={Improving Visual Object Tracking through Visual Prompting},
 author={Chen, Shih-Fang and Chen, Jun-Cheng and Jhuo, I-Hong and Lin, Yen-Yu},
-year={to appear in IEEE Transactions on Multimedia},
-publisher={IEEE}
+year={IEEE Transactions on Multimedia},
+publisher={IEEE},
+note={10.1109/TMM.2025.3535323}
 }
 ```
