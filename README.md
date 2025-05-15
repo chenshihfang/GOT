@@ -132,14 +132,14 @@ year      = {2024}
 ```
 
 ```
-@ARTICLE{10855520,
+@ARTICLE{TMM_PiVOT,
 author={Chen, Shih-Fang and Chen, Jun-Cheng and Jhuo, I-Hong and Lin, Yen-Yu},
 journal={IEEE Transactions on Multimedia}, 
-title={Improving Visual Object Tracking through Visual Prompting}, 
+title={Improving Visual Object Tracking Through Visual Prompting}, 
 year={2025},
-volume={},
+volume={27},
 number={},
-pages={1-12},
-keywords={Visualization;Target tracking;Training;Foundation models;Feature extraction;Transformers;Object tracking;Predictive models;Computational modeling;Adaptation models;Generic Visual Object Tracking;Zero-Shot Classification;Foundation Model;Meta-Learning;Transformer},
+pages={2682-2694},
+keywords={Visualization;Target tracking;Training;Foundation models;Feature extraction;Transformers;Object tracking;Predictive models;Computational modeling;Adaptation models;Generic visual object tracking;zero-shot classification;foundation model;meta-learning;transformer},
 doi={10.1109/TMM.2025.3535323}}
 ```
