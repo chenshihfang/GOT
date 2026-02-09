@@ -1,4 +1,27 @@
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/improving-visual-object-tracking-through/visual-object-tracking-on-avist)](https://paperswithcode.com/sota/visual-object-tracking-on-avist?p=improving-visual-object-tracking-through)
+
+## 🔥 Paper Accepted at ICLR 2026!
+
+**GOT-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing**
+
+Human perception for object tracking in a 2D video stream arises from the implicit use of prior visual geometry 🛰️ and semantic reasoning 👁️. GOT-Edit aligns with this principle by enabling trackers to infer 3D geometry from 2D streaming inputs for visual tracking.
+
+The core of this work is **cross-modality online model editing**. This mechanism performs online constrained model updates to incorporate geometric information adaptively while preserving semantic discrimination for online adaptation under streaming 2D inputs.
+This paradigm is **generalizable across diverse scenarios and environments** 🌐. We hope these advances chart a path toward reliability, safety, and social responsibility in vision systems
+
+- 📄 Paper: https://openreview.net/forum?id=aVa7etWnwF  
+- 💻 Code: Will be updated soon
+
+## Citing GOT-Edit
+
+```
+@inproceedings{gotedit2026iclr,
+title     = {GOT-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing},
+author    = {Shih-Fang Chen and Jun-Cheng Chen and I-Hong Jhuo and Yen-Yu Lin},
+booktitle = {Proc. Int. Conf. Learn. Represent. (ICLR)},
+year      = {2026}
+}
+```
+
 
 # PiVOT :unicorn:
 This is a Generic Object Tracking Project.  
