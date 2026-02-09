@@ -26,7 +26,7 @@ year      = {2026}
 # PiVOT :unicorn:
 This is a Generic Object Tracking Project.  
 
-### :fire: PiVOT has been accepted at TMM 2024! 👇
+### :fire: PiVOT has been accepted at TMM 2025! 👇
 * [Improving Visual Object Tracking through Visual Prompting](https://arxiv.org/abs/2409.18901) | **Code available!**
 
 ## Getting started
@@ -166,3 +166,6 @@ pages={2682-2694},
 keywords={Visualization;Target tracking;Training;Foundation models;Feature extraction;Transformers;Object tracking;Predictive models;Computational modeling;Adaptation models;Generic visual object tracking;zero-shot classification;foundation model;meta-learning;transformer},
 doi={10.1109/TMM.2025.3535323}}
 ```
+
+## Contact:
+mail: csf.cs09@nycu.edu.tw
