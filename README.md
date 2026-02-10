@@ -8,7 +8,7 @@ Human perception for object tracking in a 2D video stream arises from the implic
 The core of this work is **cross-modality online model editing**. This mechanism performs online constrained model updates to incorporate geometric information adaptively while preserving semantic discrimination for online adaptation under streaming 2D inputs.
 This paradigm is **generalizable across diverse scenarios and environments** 🌐. We hope these advances chart a path toward reliability, safety, and social responsibility in vision systems
 
-- 📄 Paper: https://openreview.net/forum?id=aVa7etWnwF  
+- 📄 Paper: https://arxiv.org/abs/2602.08550  
 - 💻 Code: Will be updated soon
 
 ## Citing GOT-Edit
