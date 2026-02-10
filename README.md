@@ -12,7 +12,7 @@ This paradigm is **generalizable across diverse scenarios and environments** �
 
 ### Raw Results
 
-The raw results are available for download [here]([https://drive.google.com/drive/folders/1O659FIlHdUgpEF9wzZMkcia1t5rTYPEP?usp=sharing](https://drive.google.com/drive/folders/1ChfM4sl3ERkfy6POB_0PaVc4zUrlqkP8?usp=sharing)).
+The raw results are available for download [here](https://drive.google.com/drive/folders/1ChfM4sl3ERkfy6POB_0PaVc4zUrlqkP8?usp=sharing)
 
 | Dataset | Model         |  NPr  |  Suc   |   Pr     | OP50  | OP75  |
 |---------|---------------|:-----:|:-----:|:---------:|:-----:|:-----:|
@@ -35,9 +35,9 @@ NPr: Normalise Precision AUC
 
 For the GOT-10K and TrackingNet results, please refer to the public leaderboards on the official evaluation websites for both challenges under the entry named “Edit” or “GOT-Edit.” The NfS results follow the evaluation protocol described [here](https://github.com/visionml/pytracking/issues/400).
 
-- 💻 Code: More details will be updated soon.
+- 💻 Code: More details will be updated soon
 
-## Consider citing “GOT-Edit” if this project impresses you.
+## Consider citing “GOT-Edit” if this project impresses you
 
 ```
 @inproceedings{gotedit2026iclr,
