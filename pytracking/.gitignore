@@ -12,6 +12,7 @@ pytracking/networks/
 pytracking/tracking_results/
 pytracking/result_plots/
 pytracking/evaluation/local.py
+pytracking/pytracking/evaluation/local.py
 pytracking/run_local.py
 tensorboard
 checkpoints
