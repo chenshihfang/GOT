@@ -17,12 +17,7 @@ trackers = []
 
 #####################
 
-# trackers.extend(trackerlist('tomp','tomp50_raw',range(0,1),'ToMP-50'))
-# trackers.extend(trackerlist('tomp','PiVOT_50',range(0,1),'PiVOT-50'))
-# trackers.extend(trackerlist('tomp','PiVOT_L_22',range(0,1),'PiVOT-L-22'))
-trackers.extend(trackerlist('tomp','PiVOT_L_27',range(0,1),'PiVOT-L-27'))
-# trackers.extend(trackerlist('tomp','pivotL27',range(0,1),'pivotL27_yours'))
-
+trackers.extend(trackerlist('GOT_Edit','GOT_Edit',range(0,1),'GOT_Edit'))
 
 #####################
 
@@ -33,7 +28,7 @@ plot=False
 attr=False
 
 
-list_=['avist','otb']
+list_=['avist','otb','lasot','nfs']
 
 
 if 'nfs' in list_:

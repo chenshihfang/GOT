@@ -33,6 +33,12 @@ Suc: Success Rate AUC
 Pr:  Precision AUC  
 NPr: Normalise Precision AUC  
 
+### Evaluate the Tracking Performance Based on Datasets
+
+```bash
+python evaluate_GOT_Edit_results.py  
+```  
+
 For the GOT-10K and TrackingNet results, please refer to the public leaderboards on the official evaluation websites for both challenges under the entry named “Edit” or “GOT-Edit.” The NfS results follow the evaluation protocol described [here](https://github.com/visionml/pytracking/issues/400).
 
 - 💻 Code: More details will be updated soon
