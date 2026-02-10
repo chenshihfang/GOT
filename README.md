@@ -3,12 +3,12 @@
 
 **GOT-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing**
 
+- 📄 Paper: https://arxiv.org/abs/2602.08550  
+
 Human perception for object tracking in a 2D video stream arises from the implicit use of prior visual geometry 🛰️ and semantic reasoning 👁️. GOT-Edit aligns with this principle by enabling trackers to infer 3D geometry from 2D streaming inputs for visual tracking.
 
 The core of this work is **cross-modality online model editing**. This mechanism performs online constrained model updates to incorporate geometric information adaptively while preserving semantic discrimination for online adaptation under streaming 2D inputs.
 This paradigm is **generalizable across diverse scenarios and environments** 🌐. We hope these advances chart a path toward reliability, safety, and social responsibility in vision systems
-
-- 📄 Paper: https://arxiv.org/abs/2602.08550  
 
 ### Raw Results
 
@@ -20,7 +20,6 @@ The raw results are available for download [here]([https://drive.google.com/driv
 |         | PiVOT-L       | 86.66 | 68.22 |   84.53   | 86.05 | 55.45 |
 |         | GOT-Edit      | 87.47 | 71.12 |   86.64   | 89.30 | 59.83 |
 | LaSOT   | ToMP-50       | 77.98 | 67.57 |   72.24   | 79.79 | 65.06 |
-|         | SeqTrack-L    | 81.53 | 72.51 |   79.25   | 82.98 | 72.68 |
 |         | PiVOT-L       | 84.68 | 73.37 |   82.09   | 85.64 | 75.18 |
 |         | GOT-Edit      | 85.08 | 75.31 |   83.17   | 86.13 | 77.52 |
 | AVisT   | ToMP-50       | 66.66 | 51.61 |   47.74   | 59.47 | 38.88 |
@@ -30,11 +29,11 @@ The raw results are available for download [here]([https://drive.google.com/driv
 |         | PiVOT-L       | 88.46 | 71.20 |   94.58   | 89.35 | 55.73 |
 |         | GOT-Edit      | 91.47 | 74.96 |   97.42   | 93.02 | 63.22 |
 
-Suc: Success Rate AUC
-Pr:  Precision AUC
-NPr: Normalise Precision AUC
+Suc: Success Rate AUC  
+Pr:  Precision AUC  
+NPr: Normalise Precision AUC  
 
-For GOT-10K and TrackingNet results, please check the public leaderboard on the evaluation websites for these two challenges under the entry named “Edit” or “GOT-Edit” for the results. The NfS results follow the evaluation method discussed in [https://github.com/visionml/pytracking/issues/400](https://github.com/visionml/pytracking/issues/400).
+For the GOT-10K and TrackingNet results, please refer to the public leaderboards on the official evaluation websites for both challenges under the entry named “Edit” or “GOT-Edit.” The NfS results follow the evaluation protocol described [here](https://github.com/visionml/pytracking/issues/400).
 
 - 💻 Code: More details will be updated soon.
 
