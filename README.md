@@ -47,7 +47,7 @@ For the GOT-10K and TrackingNet results, please refer to the public leaderboards
 
 ```
 @inproceedings{gotedit2026iclr,
-title     = {GOT-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing},
+title     = {{GOT}-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing},
 author    = {Shih-Fang Chen and Jun-Cheng Chen and I-Hong Jhuo and Yen-Yu Lin},
 booktitle = {Proc. Int. Conf. Learn. Represent. (ICLR)},
 year      = {2026}
