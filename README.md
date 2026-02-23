@@ -1,4 +1,6 @@
 
+This is a Generic Object Tracking Project
+
 ## 🔥 Paper Accepted at ICLR 2026!
 
 **GOT-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing**
@@ -58,7 +60,6 @@ year      = {2026}
 
 
 # PiVOT :unicorn:
-This is a Generic Object Tracking Project.  
 
 ### :fire: PiVOT has been accepted at TMM 2025! 👇
 * [Improving Visual Object Tracking through Visual Prompting](https://arxiv.org/abs/2409.18901) | **Code available!**
