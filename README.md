@@ -6,9 +6,7 @@ This is a Generic Object Tracking Project
 **GOT-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing**
 
 📄 Paper and Project Page
-- https://chenshihfang.github.io/GOT-EDIT/
-- https://www.microsoft.com/en-us/research/publication/got-edit-geometry-aware-generic-object-tracking-via-online-model-editing/
-- https://openreview.net/pdf?id=aVa7etWnwF
+- https://chenshihfang.github.io/GOT-EDIT
 
 Human perception for object tracking in a 2D video stream arises from the implicit use of prior visual geometry 🛰️ and semantic reasoning 👁️. GOT-Edit aligns with this principle by enabling trackers to infer 3D geometry from 2D streaming inputs for visual tracking.
 
