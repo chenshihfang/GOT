@@ -3,7 +3,7 @@
 
 **GOT-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing**
 
-- 📄 Paper:
+📄 Paper:
 - https://www.microsoft.com/en-us/research/publication/got-edit-geometry-aware-generic-object-tracking-via-online-model-editing/
 - https://arxiv.org/abs/2602.08550  
 
