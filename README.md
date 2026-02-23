@@ -174,19 +174,10 @@ The pretrained model can be downloaded from [here](https://drive.google.com/driv
 This codebase is implemented on [PyTracking](https://github.com/visionml/pytracking) libraries.
 
 
-## Citing PiVOT
+## Citing
 
 If you find this repository useful, please consider giving a star :star: and a citation
 
-
-```
-@inproceedings{got2024pivot,
-title     = {Improving Visual Object Tracking through Visual Prompting},
-author    = {Shih-Fang Chen and Jun-Cheng Chen and I-Hong Jhuo and Yen-Yu Lin},
-booktitle = {Proc. {arXiv:2409.18901}},
-year      = {2024}
-}
-```
 
 ```
 @ARTICLE{TMM_PiVOT,
@@ -197,9 +188,27 @@ year={2025},
 volume={27},
 number={},
 pages={2682-2694},
-keywords={Visualization;Target tracking;Training;Foundation models;Feature extraction;Transformers;Object tracking;Predictive models;Computational modeling;Adaptation models;Generic visual object tracking;zero-shot classification;foundation model;meta-learning;transformer},
 doi={10.1109/TMM.2025.3535323}}
 ```
+
+```
+@inproceedings{got_jepa,
+title     = {{GOT}-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture},
+author    = {Shih-Fang Chen and Jun-Cheng Chen and I-Hong Jhuo and Yen-Yu Lin},
+booktitle = {Arxiv},
+year      = {2026}
+}
+```
+
+```
+@inproceedings{gotedit2026iclr,
+title     = {{GOT}-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing},
+author    = {Shih-Fang Chen and Jun-Cheng Chen and I-Hong Jhuo and Yen-Yu Lin},
+booktitle = {Proc. Int. Conf. Learn. Represent. (ICLR)},
+year      = {2026}
+}
+```
+
 
 ## Contact:
 mail: csf.cs09@nycu.edu.tw
