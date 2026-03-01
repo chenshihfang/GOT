@@ -77,11 +77,10 @@ There are two different `local.py` files located in:
 - `pytracking/evaluation`
 
 
-
 #### Set Up the Checkpoint Environment
 
-Updating the checkpoint path in `tr/models/backbone/resnet.py` is required.
-
+Updating the checkpoint path in `ltr/models/backbone/resnet.py` is required.
+This file includes function calls for both the semantic and geometry backbones.
 
 ### Training script
 
