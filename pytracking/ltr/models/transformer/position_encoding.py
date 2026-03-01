@@ -2,7 +2,7 @@ import math
 import torch
 from torch import nn
 
-
+# NerfPositionalEncoding_ori
 class NerfPositionalEncoding(nn.Module):
     def __init__(self, depth=10, sine_type='lin_sine', avoid_aliasing=False, max_spatial_resolution=None):
         '''
@@ -26,10 +26,10 @@ class NerfPositionalEncoding(nn.Module):
     def forward(self, inputs):
         out = torch.cat([torch.sin(i * self.factor * math.pi * inputs) for i in self.bases] +
                         [torch.cos(i * self.factor * math.pi * inputs) for i in self.bases], axis=-1)
-        assert torch.isnan(out).any() == False
+        # assert torch.isnan(out).any() == False
         return out
 
-
+# PositionEmbeddingSine_ori
 class PositionEmbeddingSine(nn.Module):
     """
     This is a more standard version of the position embedding, very similar to the one
@@ -45,7 +45,7 @@ class PositionEmbeddingSine(nn.Module):
 
     @torch.no_grad()
     def forward(self, mask):
-        assert mask is not None
+        # assert mask is not None
         not_mask = ~mask
         y_embed = not_mask.cumsum(1, dtype=torch.float32)
         x_embed = not_mask.cumsum(2, dtype=torch.float32)

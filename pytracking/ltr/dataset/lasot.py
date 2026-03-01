@@ -56,6 +56,12 @@ class Lasot(BaseVideoDataset):
             ltr_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
             if split == 'train':
                 file_path = os.path.join(ltr_path, 'data_specs', 'lasot_train_split.txt')
+            elif split == 'val':
+                file_path = os.path.join(ltr_path, 'data_specs', 'lasot_val_split.txt')
+            elif split == 'train-train':
+                file_path = os.path.join(ltr_path, 'data_specs', 'lasot_train_train_split.txt')
+            elif split == 'train-val':
+                file_path = os.path.join(ltr_path, 'data_specs', 'lasot_train_val_split.txt')
             else:
                 raise ValueError('Unknown split name.')
             try:

@@ -245,3 +245,77 @@ class TrackingClassificationAccuracy(nn.Module):
             prediction_accuracy = prediction_correct.float().mean()
 
         return prediction_accuracy, prediction_correct.float()
+
+
+
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2.0, alpha=-1):
+        super().__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+
+    def forward(self, prediction, label, target_bb=None):
+        prediction = prediction.float()
+        label = label.float()
+        p = torch.sigmoid(prediction)
+        ce_loss = F.binary_cross_entropy_with_logits(prediction, label, reduction="none")
+        p_t = p * label + (1 - p) * (1 - label)
+        loss = ce_loss * ((1 - p_t) ** self.gamma)
+
+        if self.alpha >= 0:
+            alpha_t = self.alpha * label + (1 - self.alpha) * (1 - label)
+            loss = alpha_t * loss
+
+        loss = loss.mean()
+
+        return loss
+
+
+
+
+class LBSquareSquare(nn.Module):
+    """
+    Loss that implements the 'square-square' loss.
+    Args:
+        threshold: Threshold or margin 'm' used for the max function.
+        clip: Clip the loss if it exceeds this value.
+    """
+    def __init__(self, threshold=0.05, clip=None):
+        super().__init__()
+        self.threshold = threshold  # Margin m (set to 0.05 here)
+        self.clip = clip  # Optional clip value
+
+    def forward(self, prediction, label, target_bb=None):
+        """
+        Args:
+            prediction: Tensor containing predictions.
+            label: Tensor containing ground truth labels.
+            target_bb: Optional target bounding boxes (not used here).
+        Returns:
+            Loss value computed based on the square-square formulation.
+        """
+        # Separate the predictions into positive and negative based on the label
+        negative_mask = (label < self.threshold).float()
+        positive_mask = (1.0 - negative_mask)
+
+        # Predictions for the positive samples (correct labels)
+        positive_pred = positive_mask * prediction
+
+        # Predictions for the negative samples (adversarial/incorrect labels)
+        negative_pred = negative_mask * prediction
+
+        # Compute positive loss: E(W, Y^i, X^i)^2
+        positive_loss = positive_pred.pow(2)
+
+        # Compute max-margin term: (max(0, m - E(W, Ȳ^i, X^i)))^2
+        margin_diff = F.relu(self.threshold - negative_pred)
+        negative_loss = margin_diff.pow(2)
+
+        # Compute the final square-square loss
+        loss = positive_loss - negative_loss
+
+        # Clip the loss if a clip value is provided
+        if self.clip is not None:
+            loss = torch.min(loss, torch.tensor([self.clip], device=loss.device))
+
+        return loss.mean()

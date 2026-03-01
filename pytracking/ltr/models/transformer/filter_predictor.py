@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from ltr.models.transformer.position_encoding import PositionEmbeddingSine
+from typing import Optional # Add this import
+import torch.nn.functional as F # Added for cosine_similarity
 
 def MLP(channels, do_bn=True):
     n = len(channels)
@@ -15,6 +17,9 @@ def MLP(channels, do_bn=True):
     return nn.Sequential(*layers)
 
 
+
+
+# FilterPredictor FilterPredictor_ori
 class FilterPredictor(nn.Module):
     def __init__(self, transformer, feature_sz, use_test_frame_encoding=True):
         super().__init__()
@@ -106,13 +111,15 @@ class FilterPredictor(nn.Module):
         enc_opt = enc_mem[-h*w:].transpose(0, 1)
         dec_opt = output_embed.squeeze(0).transpose(1, 2)
 
-        # bat 3
-        # print("feat.shape", feat.shape) # [972 3 256]   
-        # print("enc_mem.shape", enc_mem.shape) # [972 3 256]
-        # print("output_embed.shape", output_embed.shape) # [1 3 1 256]
-        # print("enc_opt.shape", enc_opt.shape) # [3 324 256]
-        # print("dec_opt.reshape(test_feat.shape[1], -1, 1, 1).shape", dec_opt.reshape(test_feat.shape[1], -1, 1, 1).shape) # [3 256 1 1]
-        # print("enc_opt.permute(0, 2, 1).reshape(test_feat.shape).shape", enc_opt.permute(0, 2, 1).reshape(test_feat.shape).shape) # [1 3 256 18 18]
+        # print("feat.shape", feat.shape) # torch.Size([(train_num+test_num)*h*w, B, 256])
+        # print("enc_mem.shape", enc_mem.shape) # torch.Size([(train_num+test_num)*h*w, B, 256])
+        # print("enc_mem[:-h*w].shape", enc_mem[:-h*w].shape) # torch.Size([train_num*h*w, B, 256])
+        # print("enc_mem[-h*w:].shape", enc_mem[-h*w:].shape) # torch.Size([test_num*h*w, B, 256])
+        # print("output_embed.shape", output_embed.shape) # torch.Size([1, B, 1, 256])
+
+        # print("enc_opt.shape", enc_opt.shape) # [B, h*w, 256]
+        # print("dec_opt.reshape(test_feat.shape[1], -1, 1, 1).shape", dec_opt.reshape(test_feat.shape[1], -1, 1, 1).shape) # [B, h*w, 1, 1]
+        # print("enc_opt.permute(0, 2, 1).reshape(test_feat.shape).shape", enc_opt.permute(0, 2, 1).reshape(test_feat.shape).shape) # [1, B, 256, h, w]
         # input() 
 
         return dec_opt.reshape(test_feat.shape[1], -1, 1, 1), enc_opt.permute(0, 2, 1).reshape(test_feat.shape)
@@ -167,7 +174,13 @@ class FilterPredictor(nn.Module):
                                                  query_embed=self.query_embed_fg_decoder.weight,
                                                  pos_embed=pos)
 
-        enc_opt = enc_mem[-h * w:].transpose(0, 1).permute(0, 2, 1).reshape(test_feat_stack.shape)
+        # print("feat.shape", feat.shape) # torch.Size([(train_num+test_num)*h*w, 2, 256])
+        # print("enc_mem.shape", enc_mem.shape) # torch.Size([(train_num+test_num)*h*w, 2, 256])
+        # print("enc_mem[:-h*w].shape", enc_mem[:-h*w].shape) # torch.Size([train_num*h*w, 2, 256])
+        # print("enc_mem[-h*w:].shape", enc_mem[-h*w:].shape) # torch.Size([test_num*h*w, 2, 256])
+        # print("output_embed.shape", output_embed.shape) # torch.Size([1, 2, 1, 256])
+
+        enc_opt = enc_mem[-h*w:].transpose(0, 1).permute(0, 2, 1).reshape(test_feat_stack.shape)
         dec_opt = output_embed.squeeze(0).transpose(1, 2).reshape(test_feat_stack.shape[1], -1, 1, 1)
 
         cls_enc_opt = enc_opt[:, 0].unsqueeze(1)
@@ -176,4 +189,3 @@ class FilterPredictor(nn.Module):
         bbreg_dec_opt = dec_opt[1].unsqueeze(0)
 
         return cls_dec_opt, bbreg_dec_opt, cls_enc_opt, bbreg_enc_opt
-

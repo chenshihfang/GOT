@@ -1435,6 +1435,10 @@ class TargetCandiateMatchingProcessing(BaseProcessing):
         return coords
 
 
+
+
+
+
 class LTRBDenseRegressionProcessing(BaseProcessing):
     """ The processing class used for training ToMP that supports dense bounding box regression.
     """
@@ -1596,6 +1600,457 @@ class LTRBDenseRegressionProcessing(BaseProcessing):
 
             data[s + '_images'], data[s + '_anno'] = self.transform[s](image=crops, bbox=boxes, joint=False)
 
+        # Prepare output
+        if self.mode == 'sequence':
+            data = data.apply(stack_tensors)
+        else:
+            data = data.apply(lambda x: x[0] if isinstance(x, list) else x)
+
+        # Generate label functions
+        if self.label_function_params is not None:
+            data['train_label'] = self._generate_label_function(data['train_anno'])
+            data['test_label'] = self._generate_label_function(data['test_anno'])
+
+        data['test_ltrb_target'], data['test_sample_region'] = self._generate_ltbr_regression_targets(data['test_anno'])
+        data['train_ltrb_target'], data['train_sample_region'] = self._generate_ltbr_regression_targets(data['train_anno'])
+
+        return data
+
+
+
+
+
+
+
+
+class LTRBDenseRegressionProcessing_dySR(BaseProcessing):
+    """ The processing class used for training ToMP that supports dense bounding box regression.
+    """
+
+    def __init__(self, search_area_factor, output_sz, center_jitter_factor, scale_jitter_factor, crop_type='replicate',
+                 max_scale_change=None, mode='pair', stride=16, label_function_params=None,
+                 center_sampling_radius=0.0, use_normalized_coords=True, *args, **kwargs):
+        """
+        args:
+            search_area_factor - The size of the search region  relative to the target size.
+            output_sz - An integer, denoting the size to which the search region is resized. The search region is always
+                        square.
+            center_jitter_factor - A dict containing the amount of jittering to be applied to the target center before
+                                    extracting the search region. See _get_jittered_box for how the jittering is done.
+            scale_jitter_factor - A dict containing the amount of jittering to be applied to the target size before
+                                    extracting the search region. See _get_jittered_box for how the jittering is done.
+            crop_type - If 'replicate', the boundary pixels are replicated in case the search region crop goes out of image.
+                        If 'inside', the search region crop is shifted/shrunk to fit completely inside the image.
+                        If 'inside_major', the search region crop is shifted/shrunk to fit completely inside one axis of the image.
+            max_scale_change - Maximum allowed scale change when performing the crop (only applicable for 'inside' and 'inside_major')
+            mode - Either 'pair' or 'sequence'. If mode='sequence', then output has an extra dimension for frames
+            proposal_params - Arguments for the proposal generation process. See _generate_proposals for details.
+            label_function_params - Arguments for the label generation process. See _generate_label_function for details.
+            label_density_params - Arguments for the label density generation process. See _generate_label_function for details.
+        """
+        super().__init__(*args, **kwargs)
+
+        self.search_area_factor = search_area_factor
+        self.output_sz = output_sz
+        self.center_jitter_factor = center_jitter_factor
+        self.scale_jitter_factor = scale_jitter_factor
+        self.crop_type = crop_type
+        self.mode = mode
+        self.max_scale_change = max_scale_change
+        self.stride = stride
+        self.label_function_params = label_function_params
+        self.center_sampling_radius = center_sampling_radius
+        self.use_normalized_coords = use_normalized_coords
+
+
+    def random_exponential_sample(self, min_val=5.0, max_val=11.5, scale_factor=6.0):
+        """
+        Generates a random sample from a shifted and truncated exponential distribution using PyTorch.
+
+        Args:
+            min_val: The minimum value of the desired range (float).
+            max_val: The maximum value of the desired range (float).
+            scale_factor: Adjusts the scale parameter of the exponential distribution (float).
+                        Higher values concentrate samples closer to min_val.
+
+        Returns:
+            A random sample within the specified range (torch.Tensor).
+        """
+        scale = (max_val - min_val) / scale_factor
+        dist = torch.distributions.exponential.Exponential(rate=1.0 / scale)
+        sample = dist.sample() + min_val
+
+        while sample > max_val:
+            sample = dist.sample() + min_val
+
+        return int(sample)
+
+    def _get_jittered_box(self, box, mode):
+        """ Jitter the input box
+        args:
+            box - input bounding box
+            mode - string 'train' or 'test' indicating train or test data
+
+        returns:
+            torch.Tensor - jittered box
+        """
+
+        jittered_size = box[2:4] * torch.exp(torch.randn(2) * self.scale_jitter_factor[mode])
+        max_offset = (jittered_size.prod().sqrt() * torch.tensor(self.center_jitter_factor[mode]).float())
+        jittered_center = box[0:2] + 0.5 * box[2:4] + max_offset * (torch.rand(2) - 0.5)
+
+        return torch.cat((jittered_center - 0.5 * jittered_size, jittered_size), dim=0)
+
+    def _generate_label_function(self, target_bb):
+        """ Generates the gaussian label function centered at target_bb
+        args:
+            target_bb - target bounding box (num_images, 4)
+
+        returns:
+            torch.Tensor - Tensor of shape (num_images, label_sz, label_sz) containing the label for each sample
+        """
+
+        gauss_label = prutils.gaussian_label_function(target_bb.view(-1, 4),
+                                                    #   self.label_function_params['sigma_factor'],
+                                                      1/4 / self.search_area_factor,
+                                                      self.label_function_params['kernel_sz'],
+                                                      self.label_function_params['feature_sz'], self.output_sz,
+                                                      end_pad_if_even=self.label_function_params.get(
+                                                          'end_pad_if_even', True))
+
+        return gauss_label
+
+    def _generate_ltbr_regression_targets(self, target_bb):
+        shifts_x = torch.arange(
+            0, self.output_sz, step=self.stride,
+            dtype=torch.float32, device=target_bb.device
+        )
+        shifts_y = torch.arange(
+            0, self.output_sz, step=self.stride,
+            dtype=torch.float32, device=target_bb.device
+        )
+        shift_y, shift_x = torch.meshgrid(shifts_y, shifts_x)
+        shift_x = shift_x.reshape(-1)
+        shift_y = shift_y.reshape(-1)
+        locations = torch.stack((shift_x, shift_y), dim=1) + self.stride // 2
+        xs, ys = locations[:, 0], locations[:, 1]
+
+        xyxy = torch.stack([target_bb[:, 0], target_bb[:, 1], target_bb[:, 0] + target_bb[:, 2],
+                            target_bb[:, 1] + target_bb[:, 3]], dim=1)
+
+        l = xs[:, None] - xyxy[:, 0][None]
+        t = ys[:, None] - xyxy[:, 1][None]
+        r = xyxy[:, 2][None] - xs[:, None]
+        b = xyxy[:, 3][None] - ys[:, None]
+        reg_targets_per_im = torch.stack([l, t, r, b], dim=2).reshape(-1, 4)
+
+        if self.use_normalized_coords:
+            reg_targets_per_im = reg_targets_per_im / self.output_sz
+
+        if self.center_sampling_radius > 0:
+            is_in_box = self._compute_sampling_region(xs, xyxy, ys)
+        else:
+            is_in_box = (reg_targets_per_im.min(dim=1)[0] > 0)
+
+        sz = self.output_sz//self.stride
+        nb = target_bb.shape[0]
+        reg_targets_per_im = reg_targets_per_im.reshape(sz, sz, nb, 4).permute(2, 3, 0, 1)
+        is_in_box = is_in_box.reshape(sz, sz, nb, 1).permute(2, 3, 0, 1)
+
+        return reg_targets_per_im, is_in_box
+
+    def _compute_sampling_region(self, xs, xyxy, ys):
+        cx = (xyxy[:, 0] + xyxy[:, 2]) / 2
+        cy = (xyxy[:, 1] + xyxy[:, 3]) / 2
+        xmin = cx - self.center_sampling_radius * self.stride
+        ymin = cy - self.center_sampling_radius * self.stride
+        xmax = cx + self.center_sampling_radius * self.stride
+        ymax = cy + self.center_sampling_radius * self.stride
+        center_gt = xyxy.new_zeros(xyxy.shape)
+        center_gt[:, 0] = torch.where(xmin > xyxy[:, 0], xmin, xyxy[:, 0])
+        center_gt[:, 1] = torch.where(ymin > xyxy[:, 1], ymin, xyxy[:, 1])
+        center_gt[:, 2] = torch.where(xmax > xyxy[:, 2], xyxy[:, 2], xmax)
+        center_gt[:, 3] = torch.where(ymax > xyxy[:, 3], xyxy[:, 3], ymax)
+        left = xs[:, None] - center_gt[:, 0]
+        right = center_gt[:, 2] - xs[:, None]
+        top = ys[:, None] - center_gt[:, 1]
+        bottom = center_gt[:, 3] - ys[:, None]
+        center_bbox = torch.stack((left, top, right, bottom), -1)
+        is_in_box = center_bbox.min(-1)[0] > 0
+        return is_in_box
+
+    def __call__(self, data: TensorDict):
+        """
+        args:
+            data - The input data, should contain the following fields:
+                'train_images', test_images', 'train_anno', 'test_anno'
+        returns:
+            TensorDict - output data block with following fields:
+                'train_images', 'test_images', 'train_anno', 'test_anno', 'test_proposals', 'proposal_density', 'gt_density',
+                'test_label' (optional), 'train_label' (optional), 'test_label_density' (optional), 'train_label_density' (optional)
+        """
+
+        # print("self.search_area_factor", self.search_area_factor)
+
+        self.search_area_factor = self.random_exponential_sample()
+
+        # print("self.search_area_factor", self.search_area_factor)
+
+        if self.transform['joint'] is not None:
+            data['train_images'], data['train_anno'] = self.transform['joint'](image=data['train_images'],
+                                                                               bbox=data['train_anno'])
+            data['test_images'], data['test_anno'] = self.transform['joint'](image=data['test_images'],
+                                                                             bbox=data['test_anno'], new_roll=False)
+
+        for s in ['train', 'test']:
+            assert self.mode == 'sequence' or len(data[s + '_images']) == 1, \
+                "In pair mode, num train/test frames must be 1"
+
+            # Add a uniform noise to the center pos
+            jittered_anno = [self._get_jittered_box(a, s) for a in data[s + '_anno']]
+
+            crops, boxes = prutils.target_image_crop(data[s + '_images'], jittered_anno, data[s + '_anno'],
+                                                     self.search_area_factor, self.output_sz, mode=self.crop_type,
+                                                     max_scale_change=self.max_scale_change)
+
+            data[s + '_images'], data[s + '_anno'] = self.transform[s](image=crops, bbox=boxes, joint=False)
+
+        # Prepare output
+        if self.mode == 'sequence':
+            data = data.apply(stack_tensors)
+        else:
+            data = data.apply(lambda x: x[0] if isinstance(x, list) else x)
+
+        # Generate label functions
+        if self.label_function_params is not None:
+            data['train_label'] = self._generate_label_function(data['train_anno'])
+            data['test_label'] = self._generate_label_function(data['test_anno'])
+
+        data['test_ltrb_target'], data['test_sample_region'] = self._generate_ltbr_regression_targets(data['test_anno'])
+        data['train_ltrb_target'], data['train_sample_region'] = self._generate_ltbr_regression_targets(data['train_anno'])
+
+        return data
+
+
+
+
+class LTRBDenseRegressionProcessing_sametestaug(BaseProcessing):
+    """ The processing class used for training ToMP that supports dense bounding box regression.
+    """
+
+    def __init__(self, search_area_factor, output_sz, center_jitter_factor, scale_jitter_factor, crop_type='replicate',
+                 max_scale_change=None, mode='pair', stride=16, label_function_params=None,
+                 center_sampling_radius=0.0, use_normalized_coords=True, *args, **kwargs):
+        """
+        args:
+            search_area_factor - The size of the search region  relative to the target size.
+            output_sz - An integer, denoting the size to which the search region is resized. The search region is always
+                        square.
+            center_jitter_factor - A dict containing the amount of jittering to be applied to the target center before
+                                    extracting the search region. See _get_jittered_box for how the jittering is done.
+            scale_jitter_factor - A dict containing the amount of jittering to be applied to the target size before
+                                    extracting the search region. See _get_jittered_box for how the jittering is done.
+            crop_type - If 'replicate', the boundary pixels are replicated in case the search region crop goes out of image.
+                        If 'inside', the search region crop is shifted/shrunk to fit completely inside the image.
+                        If 'inside_major', the search region crop is shifted/shrunk to fit completely inside one axis of the image.
+            max_scale_change - Maximum allowed scale change when performing the crop (only applicable for 'inside' and 'inside_major')
+            mode - Either 'pair' or 'sequence'. If mode='sequence', then output has an extra dimension for frames
+            proposal_params - Arguments for the proposal generation process. See _generate_proposals for details.
+            label_function_params - Arguments for the label generation process. See _generate_label_function for details.
+            label_density_params - Arguments for the label density generation process. See _generate_label_function for details.
+        """
+        super().__init__(*args, **kwargs)
+        self.search_area_factor = search_area_factor
+        self.output_sz = output_sz
+        self.center_jitter_factor = center_jitter_factor
+        self.scale_jitter_factor = scale_jitter_factor
+        self.crop_type = crop_type
+        self.mode = mode
+        self.max_scale_change = max_scale_change
+        self.stride = stride
+        self.label_function_params = label_function_params
+        self.center_sampling_radius = center_sampling_radius
+        self.use_normalized_coords = use_normalized_coords
+
+
+
+    def _get_jittered_box(self, box, mode, rand_factor_scale=None, rand_factor_offset=None):
+        """
+        Jitter the input box [x, y, w, h].
+
+        Args:
+            box (torch.Tensor): Input bounding box [x, y, w, h].
+            mode (str): 'train' or 'test'.
+            rand_factor_scale (torch.Tensor, optional): Shared random scale factor for test frames.
+            rand_factor_offset (torch.Tensor, optional): Shared random offset factor for test frames.
+
+        Returns:
+            torch.Tensor: Jittered box [x, y, w, h].
+        """
+        # Scale Jitter
+        if mode == 'test' and rand_factor_scale is not None:
+            scale_factor = torch.exp(rand_factor_scale * self.scale_jitter_factor[mode])
+        else:
+            scale_factor = torch.exp(torch.randn(2) * self.scale_jitter_factor[mode])
+
+        # Center Offset Jitter
+        if mode == 'test' and rand_factor_offset is not None:
+            offset_random = rand_factor_offset - 0.5
+        else:
+            offset_random = torch.rand(2) - 0.5
+
+        # Compute final jittered size and center
+        jittered_size = box[2:4] * scale_factor
+        max_offset = jittered_size.prod().sqrt() * torch.tensor(
+            self.center_jitter_factor[mode], dtype=torch.float32
+        )
+        jittered_center = box[0:2] + 0.5 * box[2:4] + max_offset * offset_random
+
+        # print("===== _get_jittered_box Debug =====")
+        # print("mode:", mode)
+        # print("scale factor:", scale_factor)
+        # print("offset random:", offset_random)
+        # print("box:", box)
+        # print("jittered_size:", jittered_size)
+        # print("max_offset:", max_offset)
+        # print("jittered_center:", jittered_center)
+
+        return torch.cat([jittered_center - 0.5 * jittered_size, jittered_size], dim=0)
+
+        
+    def _generate_label_function(self, target_bb):
+        """ Generates the gaussian label function centered at target_bb
+        args:
+            target_bb - target bounding box (num_images, 4)
+
+        returns:
+            torch.Tensor - Tensor of shape (num_images, label_sz, label_sz) containing the label for each sample
+        """
+
+        gauss_label = prutils.gaussian_label_function(target_bb.view(-1, 4),
+                                                      self.label_function_params['sigma_factor'],
+                                                      self.label_function_params['kernel_sz'],
+                                                      self.label_function_params['feature_sz'], self.output_sz,
+                                                      end_pad_if_even=self.label_function_params.get(
+                                                          'end_pad_if_even', True))
+
+        return gauss_label
+
+    def _generate_ltbr_regression_targets(self, target_bb):
+        shifts_x = torch.arange(
+            0, self.output_sz, step=self.stride,
+            dtype=torch.float32, device=target_bb.device
+        )
+        shifts_y = torch.arange(
+            0, self.output_sz, step=self.stride,
+            dtype=torch.float32, device=target_bb.device
+        )
+        shift_y, shift_x = torch.meshgrid(shifts_y, shifts_x)
+        shift_x = shift_x.reshape(-1)
+        shift_y = shift_y.reshape(-1)
+        locations = torch.stack((shift_x, shift_y), dim=1) + self.stride // 2
+        xs, ys = locations[:, 0], locations[:, 1]
+
+        xyxy = torch.stack([target_bb[:, 0], target_bb[:, 1], target_bb[:, 0] + target_bb[:, 2],
+                            target_bb[:, 1] + target_bb[:, 3]], dim=1)
+
+        l = xs[:, None] - xyxy[:, 0][None]
+        t = ys[:, None] - xyxy[:, 1][None]
+        r = xyxy[:, 2][None] - xs[:, None]
+        b = xyxy[:, 3][None] - ys[:, None]
+        reg_targets_per_im = torch.stack([l, t, r, b], dim=2).reshape(-1, 4)
+
+        if self.use_normalized_coords:
+            reg_targets_per_im = reg_targets_per_im / self.output_sz
+
+        if self.center_sampling_radius > 0:
+            is_in_box = self._compute_sampling_region(xs, xyxy, ys)
+        else:
+            is_in_box = (reg_targets_per_im.min(dim=1)[0] > 0)
+
+        sz = self.output_sz//self.stride
+        nb = target_bb.shape[0]
+        reg_targets_per_im = reg_targets_per_im.reshape(sz, sz, nb, 4).permute(2, 3, 0, 1)
+        is_in_box = is_in_box.reshape(sz, sz, nb, 1).permute(2, 3, 0, 1)
+
+        return reg_targets_per_im, is_in_box
+
+    def _compute_sampling_region(self, xs, xyxy, ys):
+        cx = (xyxy[:, 0] + xyxy[:, 2]) / 2
+        cy = (xyxy[:, 1] + xyxy[:, 3]) / 2
+        xmin = cx - self.center_sampling_radius * self.stride
+        ymin = cy - self.center_sampling_radius * self.stride
+        xmax = cx + self.center_sampling_radius * self.stride
+        ymax = cy + self.center_sampling_radius * self.stride
+        center_gt = xyxy.new_zeros(xyxy.shape)
+        center_gt[:, 0] = torch.where(xmin > xyxy[:, 0], xmin, xyxy[:, 0])
+        center_gt[:, 1] = torch.where(ymin > xyxy[:, 1], ymin, xyxy[:, 1])
+        center_gt[:, 2] = torch.where(xmax > xyxy[:, 2], xyxy[:, 2], xmax)
+        center_gt[:, 3] = torch.where(ymax > xyxy[:, 3], xyxy[:, 3], ymax)
+        left = xs[:, None] - center_gt[:, 0]
+        right = center_gt[:, 2] - xs[:, None]
+        top = ys[:, None] - center_gt[:, 1]
+        bottom = center_gt[:, 3] - ys[:, None]
+        center_bbox = torch.stack((left, top, right, bottom), -1)
+        is_in_box = center_bbox.min(-1)[0] > 0
+        return is_in_box
+
+    def __call__(self, data: TensorDict):
+        """
+        args:
+            data - The input data, should contain the following fields:
+                'train_images', test_images', 'train_anno', 'test_anno'
+        returns:
+            TensorDict - output data block with following fields:
+                'train_images', 'test_images', 'train_anno', 'test_anno', 'test_proposals', 'proposal_density', 'gt_density',
+                'test_label' (optional), 'train_label' (optional), 'test_label_density' (optional), 'train_label_density' (optional)
+        """
+
+        if self.transform['joint'] is not None:
+            data['train_images'], data['train_anno'] = self.transform['joint'](image=data['train_images'],
+                                                                               bbox=data['train_anno'])
+            data['test_images'], data['test_anno'] = self.transform['joint'](image=data['test_images'],
+                                                                             bbox=data['test_anno'], new_roll=False)
+
+        for s in ['train', 'test']:
+            # In 'pair' mode, only 1 train/test image is allowed
+            assert self.mode == 'sequence' or len(data[s + '_images']) == 1, \
+                "In pair mode, num train/test frames must be 1"
+
+            # print("s", s)
+            # print("data[s + '_anno']", data[s + '_anno'])
+
+            if s == 'test':
+                # Generate one scale factor and one offset factor for ALL test frames
+                test_rand_factor_scale = torch.randn(2)
+                test_rand_factor_offset = torch.rand(2)
+
+                # Use the same random factors for each test box
+                jittered_anno = [
+                    self._get_jittered_box(
+                        box, s,
+                        rand_factor_scale=test_rand_factor_scale,
+                        rand_factor_offset=test_rand_factor_offset
+                    )
+                    for box in data[s + '_anno']
+                ]
+            else:
+                # Train mode: each box gets independent random factors
+                jittered_anno = [
+                    self._get_jittered_box(box, s)
+                    for box in data[s + '_anno']
+                ]
+
+
+            # print("jittered_anno", jittered_anno)
+
+            crops, boxes = prutils.target_image_crop(data[s + '_images'], jittered_anno, data[s + '_anno'],
+                                                     self.search_area_factor, self.output_sz, mode=self.crop_type,
+                                                     max_scale_change=self.max_scale_change)
+
+            data[s + '_images'], data[s + '_anno'] = self.transform[s](image=crops, bbox=boxes, joint=False)
+
+        # input()
         # Prepare output
         if self.mode == 'sequence':
             data = data.apply(stack_tensors)

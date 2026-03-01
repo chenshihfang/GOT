@@ -55,6 +55,8 @@ class Got10k(BaseVideoDataset):
                 file_path = os.path.join(ltr_path, 'data_specs', 'got10k_vot_train_split.txt')
             elif split == 'votval':
                 file_path = os.path.join(ltr_path, 'data_specs', 'got10k_vot_val_split.txt')
+            elif split == 'got10ktrain':
+                file_path = os.path.join(ltr_path, 'data_specs', 'got10k_train_full_split.txt')
             else:
                 raise ValueError('Unknown split name.')
             try:

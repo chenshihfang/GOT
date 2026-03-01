@@ -1,9 +1,10 @@
 import os
 import glob
 import torch
-import traceback
+import traceback,time
 from ltr.admin import loading, multigpu
-
+import random
+import numpy as np
 
 class BaseTrainer:
     """Base trainer class. Contains functions for training and saving/loading checkpoints.
@@ -49,44 +50,101 @@ class BaseTrainer:
             self._checkpoint_dir = None
 
 
+
+    def set_all_seeds(self,seed):
+        # Set seed for Python's built-in random module
+        random.seed(seed)
+    
+       # Set seed for NumPy
+        np.random.seed(seed)
+    
+        # Set seed for PyTorch on CPU
+        torch.manual_seed(seed)
+    
+        # Set seed for PyTorch on GPU(s), if available
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed) # For multi-GPU setups
+        
+        print(f"All seeds set to: {seed}")
+
+
     def train(self, max_epochs, load_latest=False, fail_safe=True):
-        """Do training for the given number of epochs.
-        args:
-            max_epochs - Max number of training epochs,
-            load_latest - Bool indicating whether to resume from latest epoch.
-            fail_safe - Bool indicating whether the training to automatically restart in case of any crashes.
-        """
+        """Do training for the given number of epochs."""
 
         epoch = -1
-        num_tries = 5
+        num_tries = 20
         for i in range(num_tries):
+
+            print(f'Try: {i}')
+        
+            # Generate and apply a new PyTorch-specific seed
+            seed_value = int(time.time())
+            self.set_all_seeds(seed_value)
+
             try:
                 if load_latest:
                     self.load_checkpoint()
 
-                for epoch in range(self.epoch+1, max_epochs+1):
+                for epoch in range(self.epoch + 1, max_epochs + 1):
                     self.epoch = epoch
-
                     self.train_epoch()
-
                     if self.lr_scheduler is not None:
                         self.lr_scheduler.step()
-
                     if self._checkpoint_dir:
                         self.save_checkpoint()
+                
+
             except:
-                print('Training crashed at epoch {}'.format(epoch))
+                #print(f'Training crashed at epoch {epoch} with error: {e}')
                 if fail_safe:
                     self.epoch -= 1
                     load_latest = True
                     print('Traceback for the error!')
                     print(traceback.format_exc())
                     print('Restarting training from last epoch ...')
-                    # input()
-                else:
-                    raise
+
 
         print('Finished training!')
+        
+    # def train(self, max_epochs, load_latest=False, fail_safe=True):
+    #     """Do training for the given number of epochs.
+    #     args:
+    #         max_epochs - Max number of training epochs,
+    #         load_latest - Bool indicating whether to resume from latest epoch.
+    #         fail_safe - Bool indicating whether the training to automatically restart in case of any crashes.
+    #     """
+
+    #     epoch = -1
+    #     num_tries = 10
+    #     for i in range(num_tries):
+    #         try:
+    #             if load_latest:
+    #                 self.load_checkpoint()
+
+    #             for epoch in range(self.epoch+1, max_epochs+1):
+    #                 self.epoch = epoch
+
+    #                 self.train_epoch()
+
+    #                 if self.lr_scheduler is not None:
+    #                     self.lr_scheduler.step()
+
+    #                 if self._checkpoint_dir:
+    #                     self.save_checkpoint()
+    #         except:
+    #             print('Training crashed at epoch {}'.format(epoch))
+    #             if fail_safe:
+    #                 self.epoch -= 1
+    #                 load_latest = True
+    #                 print('Traceback for the error!')
+    #                 print(traceback.format_exc())
+    #                 print('Restarting training from last epoch ...')
+    #                 # input()
+    #             else:
+    #                 raise
+
+    #     print('Finished training!')
 
 
     def train_epoch(self):

@@ -2,6 +2,7 @@ import math
 import torch.nn as nn
 from collections import OrderedDict
 import torch.utils.model_zoo as model_zoo
+# from torchvision.models.resnet import model_urls
 from .base import Backbone
 import torch.nn.functional as F
 
@@ -14,12 +15,163 @@ import os.path as osp
 # from .vit_encoder import build_vit_encoder
 
 import urllib
+# import mmcv
 from functools import partial
+# from mmcv.runner import load_checkpoint
 import torch
 import itertools
 
 
 print_misaligned = 1
+
+try:
+    from cotracker2.co_tracker.cotracker.predictor import CoTrackerPredictor
+    from vggt.models.vggt import VGGT
+    # from FastVGGT.vggt.models.vggt import VGGT
+    print("imported VGGT.")
+except:
+    print("Could not import VGGT.")
+    pass
+
+import os
+import sys
+import traceback
+
+
+
+# try:
+#     print("import CoTrackerPredictor")
+#     from cotracker2.co_tracker.cotracker.predictor import CoTrackerPredictor
+#     print("imported True")
+# except:
+#     print("bypass import CoTrackerPredictor False") # require install cotracker / _init_.py
+#     pass
+
+# from cotracker.predictor import CoTrackerPredictor
+
+
+# def dinov2_VGGT(checkpoint_path="facebook/VGGT-1B", device='cuda'):
+
+#     dinov2 = VGGT.from_pretrained(checkpoint_path).to(device)
+#     return dinov2
+
+def dinov2_DA3(checkpoint_path="depth-anything/da3-large", device="cuda"):
+    """
+    Load Depth Anything 3 base model from Hugging Face hub.
+
+    Returns a DepthAnything3 object (wrapper with .inference(...)).
+    """
+
+    try:
+        from depth_anything_3.api import DepthAnything3
+        print("import DepthAnything3 OK")
+    except Exception as e:
+        print("import DepthAnything3 fail:", e)
+        DepthAnything3 = None
+
+
+    if DepthAnything3 is None:
+        raise ImportError("DepthAnything3 not available, install depth-anything-3 and check PYTHONPATH.")
+
+    print("Loading Depth Anything 3 model:", checkpoint_path)
+    model = DepthAnything3.from_pretrained(checkpoint_path)
+    model = model.to(device=device)
+    model.eval()
+    
+    # input()
+    return model
+
+
+
+def dinov2_StreamVGGT(checkpoint_path="/home/sfchen94/pytrackingcsf/pytracking/ltr/StreamVGGT/src/streamvggt/ckpt/checkpoints.pth", device='cuda'):
+    """
+    Loads the StreamVGGT model from a local checkpoint file.
+    """
+
+    try:
+        # This is the only import that should work, based on your symlink
+        from streamvggt.models.streamvggt import StreamVGGT
+        import streamvggt
+        
+        print("--- SUCCESS ---")
+        print("imported StreamVGGT.")
+        # This will print the exact file path Python is using
+        print("Imported from:", streamvggt.__file__ if hasattr(streamvggt, "__file__") else streamvggt.__path__)
+        
+    except Exception as e:
+        print("--- FAILED ---")
+        print("Could not import StreamVGGT. See traceback below:")
+        # This will print the *exact* error (e.g., "No module named X", etc.)
+        traceback.print_exc()
+        StreamVGGT = None
+
+    # input()
+
+    # 3) Import and print where it came from
+    try:
+        from streamvggt.models.streamvggt import StreamVGGT
+        import streamvggt
+        print("imported StreamVGGT from:", streamvggt.__file__ if hasattr(streamvggt, "__file__") else streamvggt.__path__)
+    except Exception as e:
+        print("Could not import StreamVGGT.")
+        traceback.print_exc()
+        StreamVGGT = None
+
+
+    if StreamVGGT is None:
+        raise ImportError("StreamVGGT class not loaded.")
+    
+    print("Loading StreamVGGT model from local checkpoint...")
+
+    # 1. Instantiate the raw StreamVGGT model
+    # NOTE: If StreamVGGT() requires non-default args, you must add them here.
+    # Assuming the default constructor is correct:
+    model = StreamVGGT()
+    
+    # 2. Load the checkpoint state dict from the file path
+    print(f"Loading weights from: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+
+    # 3. Load the state dict into the model
+    # (Following your snippet, assuming the .pth file is the state dict)
+    model.load_state_dict(checkpoint, strict=True)
+    
+    # 4. Move to device and set to eval mode
+    # The ToMPnet .train() or .eval() calls will override this,
+    # but .eval() is a safe default for a pre-trained backbone.
+    model.to(device).eval()
+    
+    print("StreamVGGT model loaded successfully from local checkpoint.")
+    # input()
+    return model
+
+
+def dinov2_VGGT(checkpoint_path="facebook/VGGT-1B", device='cuda'):
+
+    dinov2 = VGGT.from_pretrained(checkpoint_path).to(device)
+    return dinov2
+
+
+
+# def dinov2_VGGT(checkpoint_path="https://huggingface.co/facebook/VGGT-1B/resolve/main/model.pt", device='cuda'): # 11.1 ~ 12.2
+
+#     model = VGGT()
+#     model.load_state_dict(torch.hub.load_state_dict_from_url(checkpoint_path))
+#     dinov2 = model.to(device)
+
+#     return dinov2
+
+
+# def dinov2_VGGT():
+
+#     return VGGT()
+
+
+def cotracker_predictor(checkpoint_path="ltr/cotracker2/co_tracker/checkpoints/cotracker2.pth", device='cuda'):
+    cotracker = CoTrackerPredictor(checkpoint=checkpoint_path).to(device)
+    return cotracker
+
+
 
 def VIT(SEARCH_SIZE, ENCODER_TYPE, ENCODER_PRETRAIN_TYPE, train_encoder):
 
@@ -28,11 +180,200 @@ def VIT(SEARCH_SIZE, ENCODER_TYPE, ENCODER_PRETRAIN_TYPE, train_encoder):
     return encoder
 
 def dinov2(model_name = "dinov2_vitl14"):
-    # dinov2_reg
 
     dinov2 = torch.hub.load('facebookresearch/dinov2', model_name)
-
     return dinov2
+
+
+def dinov3(dino_name):
+    # Map model name to its weight file name (if you ever want local defaults)
+    model_weights = {
+        "dinov3_vitl16": "dinov3_vitl16_lvd1689m.pth",
+        "dinov3_convnext_tiny": "dinov3_convnext_tiny_pretrain_lvd1689m.pth",
+    }
+    
+    # Check if model is supported
+    if dino_name not in model_weights:
+        raise ValueError(f"Unsupported DINOv3 model: {dino_name}")
+
+    REPO_DIR = "/home/sfchen94/pytrackingcsf/dinov3/"
+
+    print(f"Loading {dino_name} with weights from remote URL.")
+    model = torch.hub.load(
+        repo_or_dir=REPO_DIR,
+        model=dino_name,
+        source='local',
+        weights="https://dinov3.llamameta.net/dinov3_vitl16/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth?Policy=eyJTdGF0ZW1lbnQiOlt7InVuaXF1ZV9oYXNoIjoiMjRveTIwczV0d2RqNTcwcjVxdWFpbW0zIiwiUmVzb3VyY2UiOiJodHRwczpcL1wvZGlub3YzLmxsYW1hbWV0YS5uZXRcLyoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3NTU0MDY3MzZ9fX1dfQ__&Signature=JN1t-OncFtkNjeoe0m7X%7ErfXvGR9gUuEUlaQc1bamJ7M%7ETV7LKXFZVoeRLxJRnfqL1vN8iZIlG-ENUAieQgvPiabTKIJdOxsy3SkavFhjPjuwSOHMdLV3B49lAVVDWR1rpkOUlCnHOGQJDVHTk0IB27qzFGuamPi%7EwyaYO565AiVtZ%7E9Dobmen5RmW5vF2O557GhasIS0e9oR7zjqj%7EOmtSjXWtLr5bzTW4-PQad9WCWvBo6KaV%7EsoLmq1ugDzLupXdC5Xeyb2DFQbA0A4kmD1F4gL4PUzY50ubn90V1wqvj0UXGLZe2doVWi0IV2PADte89o0M7dra2p6rwrXllEw__&Key-Pair-Id=K15QRJLYKIFSLZ&Download-Request-ID=2433063113757620"
+    )
+
+    model.to("cuda")
+    model.eval()
+    return model
+
+def dinov3_(dino_name):
+    # This dictionary maps a model name to its weight file name
+    model_weights = {
+        "dinov3_vitl16": "dinov3_vitl16_lvd1689m.pth", # Example file name
+        "dinov3_convnext_tiny": "dinov3_convnext_tiny_pretrain_lvd1689m.pth",
+        # Add other models and their weight file names here
+    }
+    
+    # Check if the requested model is supported
+    if dino_name not in model_weights:
+        raise ValueError(f"Unsupported DINOv3 model: {dino_name}")
+
+    MODEL_WEIGHTS_FILE = model_weights[dino_name]
+    WEIGHT_PATH = "/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth"
+    REPO_DIR = "/home/sfchen94/pytrackingcsf/dinov3/"
+
+    if not os.path.exists(WEIGHT_PATH):
+        raise FileNotFoundError(f"Model weights not found at: {WEIGHT_PATH}")
+
+    # --- MODIFICATION STARTS HERE ---
+    
+    # 1. Use torch.hub.load to build the model architecture ONLY.
+    #    Do NOT pass the 'weights' argument here directly.
+    print(f"Loading {dino_name} architecture from local hub.")
+    model = torch.hub.load(
+        repo_or_dir=REPO_DIR,
+        model=dino_name,  # This should be the function name in hubconf.py
+        source='local',
+        weights="https://dinov3.llamameta.net/dinov3_vitl16/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth?Policy=eyJTdGF0ZW1lbnQiOlt7InVuaXF1ZV9oYXNoIjoiMjRveTIwczV0d2RqNTcwcjVxdWFpbW0zIiwiUmVzb3VyY2UiOiJodHRwczpcL1wvZGlub3YzLmxsYW1hbWV0YS5uZXRcLyoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3NTU0MDY3MzZ9fX1dfQ__&Signature=JN1t-OncFtkNjeoe0m7X%7ErfXvGR9gUuEUlaQc1bamJ7M%7ETV7LKXFZVoeRLxJRnfqL1vN8iZIlG-ENUAieQgvPiabTKIJdOxsy3SkavFhjPjuwSOHMdLV3B49lAVVDWR1rpkOUlCnHOGQJDVHTk0IB27qzFGuamPi%7EwyaYO565AiVtZ%7E9Dobmen5RmW5vF2O557GhasIS0e9oR7zjqj%7EOmtSjXWtLr5bzTW4-PQad9WCWvBo6KaV%7EsoLmq1ugDzLupXdC5Xeyb2DFQbA0A4kmD1F4gL4PUzY50ubn90V1wqvj0UXGLZe2doVWi0IV2PADte89o0M7dra2p6rwrXllEw__&Key-Pair-Id=K15QRJLYKIFSLZ&Download-Request-ID=2433063113757620"
+        # Remove 'weights=WEIGHT_PATH' from this call
+    )
+
+    # 2. Manually load the state dictionary from your local .pth file
+    print(f"Loading weights from: {WEIGHT_PATH}")
+    # It's good practice to load to CPU first to avoid CUDA memory issues during loading
+    state_dict = torch.load(WEIGHT_PATH, map_location="cpu") 
+    model.load_state_dict(state_dict) # Apply the loaded weights to the model
+    
+    # --- MODIFICATION ENDS HERE ---
+
+    model.to("cuda") # Move model to GPU after loading weights
+    model.eval()
+    
+    return model
+
+
+# from dinov3.hub.backbones import dinov3_vitl16 as load_dinov3_vitl16
+# from dinov3.models.vision_transformer import DinoVisionTransformer
+
+# def dinov3(model_name="dinov3_vitl16"):
+#     # Define the model parameters based on the specific DINOv3 model
+#     # For ViT-L/16, these are common parameters. You may need to check the
+#     # dinov3 source code for the exact values.
+#     # Note: These values might need adjustment based on the DINOv3 version.
+#     model_params = {
+#         'patch_size': 16,
+#         'embed_dim': 1024,
+#         'depth': 24,
+#         'num_heads': 16,
+#         'mlp_ratio': 4,
+#         'num_register_tokens': 4,
+#         'interpolate_mode': 'bicubic'
+#     }
+
+#     # Create the model instance directly without the hub
+#     model = DinoVisionTransformer(**model_params)
+    
+#     # Load your local weights
+#     weights_DIR = "/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth"
+#     checkpoint = torch.load(weights_DIR, map_location='cpu')
+
+#     # Load the state dictionary from the checkpoint file
+#     # DINOv3 checkpoints often store the state dict under a 'teacher' key
+
+#     # Try loading the 'student' key instead of 'teacher'
+#     # if 'student' in checkpoint:
+#     #     state_dict = checkpoint['student']
+#     # elif 'teacher' in checkpoint:
+#     #     state_dict = checkpoint['teacher']
+#     # else:
+#     #     # Fallback to the entire checkpoint if no specific key is found
+#     #     state_dict = checkpoint
+#     state_dict = checkpoint
+#     # model.load_state_dict(state_dict, strict=False)
+#     model.load_state_dict(state_dict, strict=True)
+    
+#     # Move the model to the GPU
+#     model.cuda()
+    
+#     return model
+
+
+# def dinov3(model_name="dinov3_vitl16"):
+#     # This function is now simplified and directly uses the installed package.
+#     # The `model_name` argument might become redundant if you're only loading one specific model.
+#     weights_DIR = "/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth"
+    
+#     # Load the model directly from the installed package
+#     dinov3_model = load_dinov3_vitl16(weights=weights_DIR)
+    
+#     # Move to GPU
+#     dinov3_model.cuda()
+    
+#     return dinov3_model
+
+# def dinov3(model_name = "dinov3_vitl16"):
+
+#     # examples of available DINOv3 models:
+#     # MODEL_DINOV3_VITS = "dinov3_vits16"
+#     # MODEL_DINOV3_VITSP = "dinov3_vits16plus"
+#     # MODEL_DINOV3_VITB = "dinov3_vitb16"
+#     # MODEL_DINOV3_VITL = "dinov3_vitl16"
+#     # MODEL_DINOV3_VITHP = "dinov3_vith16plus"
+#     # MODEL_DINOV3_VIT7B = "dinov3_vit7b16"
+
+#     # wget -O dinov3_vitl16.pth ""
+
+#     REPO_DIR = "/home/sfchen94/pytrackingcsf/dinov3/"
+#     weights_DIR = "/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth"
+    
+
+#     # DINOv3 ViT models pretrained on web images
+#     # dinov3 = torch.hub.load(REPO_DIR, model_name, source='local', weights=weights_DIR)
+
+#     dinov3 = torch.hub.load(
+#         repo_or_dir="facebookresearch/dinov3",
+#         model="dinov3_vitl16",
+#         weights="/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth",
+#     )
+
+#     # dinov3 = torch.hub.load('facebookresearch/dinov3', model_name)
+
+
+#     dinov3.cuda()
+
+#     return dinov3
+
+
+def vjepa2_hub(model_name='vjepa2_vit_large', out_layers=None):
+    """
+    Loads a V-JEPA model, configuring it to output features
+    from specific intermediate layers.
+    """
+    # The hub entry returns (model, preprocessor).
+    # Pass out_layers directly to the model constructor via torch.hub.load
+    model, _ = torch.hub.load(
+        'facebookresearch/vjepa2',
+        model_name,
+        out_layers=out_layers,
+        force_reload=False
+    )
+    return model
+
+def radio():
+
+    model_version = "radio_v2.1"
+    # model_version = "radio_v2"
+    # model_version = "e-radio_v2"
+
+    model = torch.hub.load('NVlabs/RADIO', 'radio_model', version=model_version, progress=True, skip_validation=True)
+
+    # model.cuda().eval()
+
+    return model
 
 
 # 3. Define utility functions
@@ -60,6 +401,58 @@ class CenterPadding(torch.nn.Module):
         return output
 
 
+def create_depther(cfg, backbone_model, backbone_size, head_type):
+    train_cfg = cfg.get("train_cfg")
+    test_cfg = cfg.get("test_cfg")
+    depther = build_depther(cfg.model, train_cfg=train_cfg, test_cfg=test_cfg)
+    depther.backbone.forward = partial(
+        backbone_model.get_intermediate_layers,
+        n=cfg.model.backbone.out_indices,
+        reshape=True,
+        return_class_token=cfg.model.backbone.output_cls_token,
+        norm=cfg.model.backbone.final_norm,
+    )
+    if hasattr(backbone_model, "patch_size"):
+        depther.backbone.register_forward_pre_hook(lambda _, x: CenterPadding(backbone_model.patch_size)(x[0]))
+    return depther
+    
+def dinov2_Depth(backbone_model, backbone_scale):
+
+    # backbone_model.eval()
+    backbone_model.cuda()
+    # 5. Load configuration
+    HEAD_DATASET = "nyu"
+    HEAD_TYPE = "dpt"
+    DINOV2_BASE_URL = "https://dl.fbaipublicfiles.com/dinov2"
+
+
+    BACKBONE_SIZE = backbone_scale
+    backbone_archs = {"small": "vits14", "base": "vitb14", "large": "vitl14", "giant": "vitg14"}
+    backbone_arch = backbone_archs[BACKBONE_SIZE]
+    backbone_name = f"dinov2_{backbone_arch}"
+
+    head_config_url = f"{DINOV2_BASE_URL}/{backbone_name}/{backbone_name}_{HEAD_DATASET}_{HEAD_TYPE}_config.py"
+    head_checkpoint_url = f"{DINOV2_BASE_URL}/{backbone_name}/{backbone_name}_{HEAD_DATASET}_{HEAD_TYPE}_head.pth"
+    cfg_str = load_config_from_url(head_config_url)
+    cfg = mmcv.Config.fromstring(cfg_str, file_format=".py")
+    model = create_depther(cfg, backbone_model=backbone_model, backbone_size=backbone_name, head_type=HEAD_TYPE)
+    load_checkpoint(model, head_checkpoint_url, map_location="cpu")
+    model.cuda()
+
+    # print("model dpt\n", model)
+    # input()
+
+    # print("model dpt DPTHead:\n", model.decode_head)
+    # input()
+
+    # output = model.decode_head(input_tensor)
+    # print("output decode_head:\n", output)
+    # input()
+
+
+    return model
+
+    
 def resnet50(output_layers=None, pretrained=False, **kwargs):
     """Constructs a ResNet-50 model.
     """

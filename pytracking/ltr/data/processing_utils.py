@@ -645,16 +645,24 @@ def gaussian_label_function_center(target_center, sigma_factor, kernel_sz, feat_
 
     # Move size tensors to the same device as target_center
     device = target_center.device
+
     image_sz = torch.tensor(image_sz, device=device)
     feat_sz = torch.tensor(feat_sz, device=device)
+
+    # print("image_sz", image_sz) # image_sz tensor([432, 432], device='cuda:0')
+    # print("feat_sz", feat_sz) # feat_sz tensor([27, 27], device='cuda:0')
+    # print("kernel_sz", kernel_sz) # kernel_sz (1, 1)
 
     # Normalize target center and calculate center positions
     target_center_norm = (target_center - image_sz / 2) / image_sz
     center = feat_sz * target_center_norm + 0.5 * torch.tensor([(kernel_sz[0] + 1) % 2, (kernel_sz[1] + 1) % 2], device=device)
 
+    # print("feat_sz.prod()", feat_sz.prod()) # feat_sz.prod() tensor(729, device='cuda:0')
+
     # Calculate sigma based on the geometric mean of feature sizes
     sigma = sigma_factor * feat_sz.prod().sqrt().item()
 
+    # print("end_pad_if_even", end_pad_if_even) # end_pad_if_even True
     # Determine padding based on kernel size
     if end_pad_if_even:
         end_pad = (int(kernel_sz[0] % 2 == 0), int(kernel_sz[1] % 2 == 0))
@@ -663,11 +671,15 @@ def gaussian_label_function_center(target_center, sigma_factor, kernel_sz, feat_
 
     # Generate Gaussian label
     gauss_label = gauss_2d_PT(feat_sz, sigma, center, end_pad, density=density)
+
+    # print("density", density) # density False
     if density:
         sz = (feat_sz + torch.tensor(end_pad, device=device)).prod()
         label = (1.0 - uni_bias) * gauss_label + uni_bias / sz
     else:
         label = gauss_label + uni_bias
+
+    # input()
 
     return label
 

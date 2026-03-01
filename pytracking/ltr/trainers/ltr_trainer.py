@@ -120,6 +120,12 @@ class LTRTrainer(BaseTrainer):
                 else:
                     torch.nn.utils.clip_grad_norm_(self.actor.net.parameters(), 0.8, norm_type=2)
 
+                # if not self.use_GradScaler:
+                #     torch.nn.utils.clip_grad_norm_(self.actor.net.parameters(), 1.0, norm_type=2)
+                # else:
+                #     torch.nn.utils.clip_grad_norm_(self.actor.net.parameters(), 1.0, norm_type=2)
+
+
                 if self.print:
                     # Recalculate gradient norms after clipping
                     grad_norms_after = {name: param.grad.norm(2).item() for name, param in self.actor.net.named_parameters() if param.grad is not None}

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from torch.nn.functional import l1_loss
 
 class GIoULoss(nn.Module):
     def __init__(self):
@@ -49,3 +49,22 @@ class GIoULoss(nn.Module):
             loss_mean = losses.mean()
 
         return loss_mean, ious
+
+
+
+class L1_loss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, pred, target):
+
+        # print("pred 1", pred.shape) #torch.Size([1, 2, 4, 27, 27])
+        # print("target 2", target.shape) #torch.Size([1, 2, 4, 27, 27])
+
+        pred = pred.permute(0, 1, 3, 4, 2).reshape(-1, 4) # nf x ns x x 4 x h x w
+        target = target.permute(0, 1, 3, 4, 2).reshape(-1, 4) #nf x ns x 4 x h x w
+
+        # print("pred 3", pred.shape) #torch.Size([1458, 4])
+        # print("target 4", target.shape) #torch.Size([1458, 4])
+
+        return l1_loss(pred, target)  # (BN,4) (BN,4)

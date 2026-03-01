@@ -154,7 +154,7 @@ class MSCOCOSeq(BaseVideoDataset):
 
         img = jpeg4py_loader_w_failsafe(os.path.join(self.img_pth, path))
 
-        return img, path
+        return img, self.img_pth, path
 
     def get_meta_info(self, seq_id):
         try:
@@ -181,27 +181,21 @@ class MSCOCOSeq(BaseVideoDataset):
         # COCO is an image dataset. Thus we replicate the image denoted by seq_id len(frame_ids) times, and return a
         # list containing these replicated images.
 
+        frame_list = []  # Clear the frame list
 
         try:
             frame = self._get_frames(seq_id)
             frame_list = [frame.copy() for _ in frame_ids]
-        except:
-            print("fail 1")
+        except Exception as e:
             path = "unknown"  # Default path assignment if not known
-            try:
-                frame, path = self._get_frames_check(seq_id)
-            except:
-                print("fail 2")
-                try:
-                    seq_id + 8  # It's unclear what this line intends to do
-                    frame, path = self._get_frames(seq_id)
-                    frame_list = [frame.copy() for _ in frame_ids]
-                except:
-                    print("fail 3")
-                    with open('error_log_train.txt', 'a') as f:
-                        f.write(f"path: {path}\n")
-                    pass
-
+            with open('error_log_train.txt', 'a') as f:
+                f.write(f"Fail 1 - Error: {e}\n")
+            try:        
+                frame, img_pth, path = self._get_frames_check(seq_id)
+                frame_list = [frame.copy() for _ in frame_ids]
+            except Exception as e:
+                with open('error_log_train.txt', 'a') as f:
+                    f.write(f"Fail 2 - Error: {e}, img_pth: {img_pth}, path: {path}\n")
 
         if anno is None:
             anno = self.get_sequence_info(seq_id)

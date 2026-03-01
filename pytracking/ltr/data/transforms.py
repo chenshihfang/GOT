@@ -128,7 +128,10 @@ class TransformBase:
         if im is None:
             return None
         if isinstance(im, (list, tuple)):
-            im = im[0]
+            try:
+                im = im[0]
+            except:
+                return None
         if isinstance(im, np.ndarray):
             return im.shape[:2]
         if torch.is_tensor(im):
@@ -387,14 +390,16 @@ class RandomBlur(TransformBase):
 
 class RandomAffine(TransformBase):
     """Apply random affine transformation."""
+
     def __init__(self, p_flip=0.0, max_rotation=0.0, max_shear=0.0, max_scale=0.0, max_ar_factor=0.0,
-                 border_mode='constant', pad_amount=0):
+                 border_mode='constant', pad_amount=0, scale_center=0.0):
         super().__init__()
         self.p_flip = p_flip
         self.max_rotation = max_rotation
         self.max_shear = max_shear
         self.max_scale = max_scale
         self.max_ar_factor = max_ar_factor
+        self.scale_center = scale_center
 
         if border_mode == 'constant':
             self.border_flag = cv.BORDER_CONSTANT
@@ -415,9 +420,11 @@ class RandomAffine(TransformBase):
         ar_factor = np.exp(random.uniform(-self.max_ar_factor, self.max_ar_factor))
         scale_factor = np.exp(random.uniform(-self.max_scale, self.max_scale))
 
-        return do_flip, theta, (shear_x, shear_y), (scale_factor, scale_factor * ar_factor)
+        scale_center = random.uniform(-self.scale_center, self.scale_center)
 
-    def _construct_t_mat(self, image_shape, do_flip, theta, shear_values, scale_factors):
+        return do_flip, theta, (shear_x, shear_y), (scale_factor, scale_factor * ar_factor), scale_center
+
+    def _construct_t_mat(self, image_shape, do_flip, theta, shear_values, scale_factors, scale_center):
         im_h, im_w = image_shape
         t_mat = np.identity(3)
 
@@ -437,7 +444,11 @@ class RandomAffine(TransformBase):
                             [0.0, scale_factors[1], (1.0 - scale_factors[1]) * 0.5 * im_h],
                             [0.0, 0.0, 1.0]])
 
-        t_mat = t_scale @ t_rot @ t_shear @ t_mat
+        t_trans = np.array([[1.0, 0.0, -0.2 * im_w * scale_center],
+                            [0.0, 1.0, -0.2 * im_w * scale_center],
+                            [0.0, 0.0, 1.0]])
+
+        t_mat = t_scale @ t_rot @ t_shear @ t_mat @ t_trans
 
         t_mat[0, 2] += self.pad_amount
         t_mat[1, 2] += self.pad_amount
@@ -446,31 +457,36 @@ class RandomAffine(TransformBase):
 
         return t_mat
 
-    def transform_image(self, image, do_flip, theta, shear_values, scale_factors):
+    def transform_image(self, image, do_flip, theta, shear_values, scale_factors, scale_center):
         if torch.is_tensor(image):
             raise Exception('Only supported for numpy input')
 
-        t_mat = self._construct_t_mat(image.shape[:2], do_flip, theta, shear_values, scale_factors)
-        output_sz = (image.shape[1] + 2*self.pad_amount, image.shape[0] + 2*self.pad_amount)
+        t_mat = self._construct_t_mat(image.shape[:2], do_flip, theta, shear_values, scale_factors, scale_center)
+        output_sz = (image.shape[1] + 2 * self.pad_amount, image.shape[0] + 2 * self.pad_amount)
         image_t = cv.warpAffine(image, t_mat, output_sz, flags=cv.INTER_LINEAR,
                                 borderMode=self.border_flag)
 
         return image_t
 
-    def transform_coords(self, coords, image_shape, do_flip, theta, shear_values, scale_factors):
-        t_mat = self._construct_t_mat(image_shape, do_flip, theta, shear_values, scale_factors)
+    def transform_coords(self, coords, image_shape, do_flip, theta, shear_values, scale_factors, scale_center):
+        t_mat = self._construct_t_mat(image_shape, do_flip, theta, shear_values, scale_factors, scale_center)
 
         t_mat_tensor = torch.from_numpy(t_mat).float()
 
-        coords_xy1 = torch.stack((coords[1, :], coords[0, :], torch.ones_like(coords[1, :])))
+        coords_xy1 = torch.stack((coords[1, :], coords[0, :], torch.ones_like(coords[1, :]))).float()
 
         coords_xy_t = torch.mm(t_mat_tensor, coords_xy1)
 
-        return coords_xy_t[[1, 0], :]
+        # coords_xy_t_cropped = torch.clamp(coords_xy_t, min=torch.zeros(2, 1),
+        #                                   max=torch.tensor([[image_shape[1]], [image_shape[0]]]))
+        coords_xy_t_cropped = torch.stack([torch.clamp(coords_xy_t[0], min=0, max=image_shape[1]),
+                                           torch.clamp(coords_xy_t[1], min=0, max=image_shape[0])], dim=0)
 
-    def transform_mask(self, mask, do_flip, theta, shear_values, scale_factors):
-        t_mat = self._construct_t_mat(mask.shape[:2], do_flip, theta, shear_values, scale_factors)
-        output_sz = (mask.shape[1] + 2*self.pad_amount, mask.shape[0] + 2*self.pad_amount)
+        return coords_xy_t_cropped[[1, 0], :]
+
+    def transform_mask(self, mask, do_flip, theta, shear_values, scale_factors, scale_center):
+        t_mat = self._construct_t_mat(mask.shape[:2], do_flip, theta, shear_values, scale_factors, scale_center)
+        output_sz = (mask.shape[1] + 2 * self.pad_amount, mask.shape[0] + 2 * self.pad_amount)
 
         mask_t = cv.warpAffine(mask.numpy(), t_mat, output_sz, flags=cv.INTER_NEAREST,
                                borderMode=self.border_flag)

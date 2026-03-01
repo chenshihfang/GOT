@@ -192,6 +192,10 @@ class TrackingSampler(torch.utils.data.Dataset):
                 train_frame_ids = [1] * self.num_train_frames
                 test_frame_ids = [1] * self.num_test_frames
 
+            # if (test_frame_ids[0] - train_frame_ids[0])  > 195:
+            #     print("train_frame_ids 1", train_frame_ids)
+            #     print("test_frame_ids 1", test_frame_ids)
+
             try:
                 train_frames, train_anno, meta_obj_train = dataset.get_frames(seq_id, train_frame_ids, seq_info_dict)
                 test_frames, test_anno, meta_obj_test = dataset.get_frames(seq_id, test_frame_ids, seq_info_dict)
@@ -208,16 +212,23 @@ class TrackingSampler(torch.utils.data.Dataset):
                 valid = False
                 print("valid", valid)
 
-        data = TensorDict({'train_images': train_frames,
-                        'train_anno': train_anno['bbox'],
-                        'test_images': test_frames,
-                        'test_anno': test_anno['bbox'],
-                        'dataset': dataset.get_name(),
-                        'test_class': meta_obj_test.get('object_class_name')})
+            try:
+                data = TensorDict({'train_images': train_frames,
+                                'train_anno': train_anno['bbox'],
+                                'test_images': test_frames,
+                                'test_anno': test_anno['bbox'],
+                                'dataset': dataset.get_name(),
+                                'test_class': meta_obj_test.get('object_class_name')})
+                proc_data = self.processing(data)
+            except:
+                print("re-load data")
+                try:
+                    print(dataset)
+                except:
+                    pass
+                valid = False
 
-        # print("self.processing(data)")
-        # input()
-        return self.processing(data)
+        return proc_data
 
 
 class DiMPSampler(TrackingSampler):
@@ -796,10 +807,11 @@ class PTSampler(torch.utils.data.Dataset):
     The sampling is done in the following ways. First a dataset is selected at random. Next, a sequence is randomly
     selected from that dataset. A base frame is then sampled randomly from the sequence. The 'train frames'
     are then sampled from the sequence from the range [base_frame_id - max_gap, base_frame_id], and the 'test frames'
-    are sampled from the sequence from the range (base_frame_id, base_frame_id + max_gap] respectively. Only the frames
+    are sampled from the sequence from the range [base_frame_id, base_frame_id + max_gap] respectively. Only the frames
     in which the target is visible are sampled. If enough visible frames are not found, the 'max_gap' is increased
     gradually until enough frames are found. Both the 'train frames' and the 'test frames' are sorted to preserve the
     temporal order.
+    # range is max_gap
 
     The sampled frames are then passed through the input 'processing' function for the necessary processing-
     """
@@ -930,6 +942,9 @@ class PTSampler(torch.utils.data.Dataset):
 
         # Sample a sequence with enough visible frames
         enough_visible_frames = False
+
+        # ran_frame_step = 8
+
         while not enough_visible_frames:
             # print("not enough_visible_frames")
             # Sample a sequence
@@ -939,7 +954,19 @@ class PTSampler(torch.utils.data.Dataset):
             seq_info_dict = dataset.get_sequence_info(seq_id)
             visible = seq_info_dict['visible']
 
-            enough_visible_frames = visible.type(torch.int64).sum().item() > self.frame_step * (self.num_test_frames + self.num_train_frames)
+            if self.frame_step == "ran8":
+                ran_frame_step = random.randint(1, 8)
+                enough_visible_frames = visible.type(torch.int64).sum().item() > ran_frame_step * (self.num_test_frames + self.num_train_frames)
+            elif self.frame_step == "ran4":
+                ran_frame_step = random.randint(1, 4)
+                enough_visible_frames = visible.type(torch.int64).sum().item() > ran_frame_step * (self.num_test_frames + self.num_train_frames)
+            elif self.frame_step == "ran2":
+                ran_frame_step = random.randint(1, 2)
+                enough_visible_frames = visible.type(torch.int64).sum().item() > ran_frame_step * (self.num_test_frames + self.num_train_frames)
+            else:
+                enough_visible_frames = visible.type(torch.int64).sum().item() > self.frame_step * (self.num_test_frames + self.num_train_frames)
+
+                # print("ran_frame_step", ran_frame_step)
 
             enough_visible_frames = enough_visible_frames or not is_video_dataset
 
@@ -965,12 +992,17 @@ class PTSampler(torch.utils.data.Dataset):
                         gap_increase += 5
                         continue
 
+                    # print("base_frame_id", base_frame_id)
                     # print("self.num_train_frames", self.num_train_frames)
                     # print("len(visible)", len(visible))
                     # print("self.num_test_frames", self.num_test_frames)
 
-                    train_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_train_frames, min_id=0, max_id=len(visible) - self.num_test_frames, step=self.frame_step)
-                    test_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_test_frames, min_id=train_frame_ids[-1] + 1, max_id=len(visible), step=self.frame_step)
+                    if self.frame_step == "ran8" or self.frame_step == "ran4" or self.frame_step == "ran2":
+                        train_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_train_frames, min_id=0, max_id=len(visible) - self.num_test_frames, step=ran_frame_step)
+                        test_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_test_frames, min_id=train_frame_ids[-1] + 1, max_id=len(visible), step=ran_frame_step)
+                    else:
+                        train_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_train_frames, min_id=0, max_id=len(visible) - self.num_test_frames, step=self.frame_step)
+                        test_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_test_frames, min_id=train_frame_ids[-1] + 1, max_id=len(visible), step=self.frame_step)
 
                     # Increase gap until a frame is found
                     gap_increase += 5
@@ -989,11 +1021,13 @@ class PTSampler(torch.utils.data.Dataset):
         # print("train_frame_ids 1", train_frame_ids)
         # print("test_frame_ids 1", test_frame_ids)
 
-        # train_frame_ids 1 [6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51]
-        # test_frame_ids 1 [55, 58, 61, 64, 67, 70, 73, 76]
+        # case:
+        #     self.num_test_frames = 16
+        #     self.num_train_frames = 2
+        #     frame_step = 8
+        # train_frame_ids 1 [2226, 2234]
+        # test_frame_ids 1 [2452, 2460, 2468, 2476, 2484, 2492, 2500, 2508]
 
-        # train_frame_ids 1 [22, 24, 26, 28, 30, 32, 34, 36, 38, 40]
-        # test_frame_ids 1 [64, 66, 68, 70, 72]
         # input()
 
 
@@ -1023,3 +1057,299 @@ class PTSampler(torch.utils.data.Dataset):
 
         return self.processing(data)
 
+
+
+
+
+class PTSampler_tr2(torch.utils.data.Dataset):
+
+    """ Class responsible for sampling frames from training sequences to form batches. Each training sample is a
+    tuple consisting of i) a set of train frames and ii) a set of test frames. The train frames, along with the
+    ground-truth masks, are passed to the few-shot learner to obtain the target model parameters \tau. The test frames
+    are used to compute the prediction accuracy.
+
+    The sampling is done in the following ways. First a dataset is selected at random. Next, a sequence is randomly
+    selected from that dataset. A base frame is then sampled randomly from the sequence. The 'train frames'
+    are then sampled from the sequence from the range [base_frame_id - max_gap, base_frame_id], and the 'test frames'
+    are sampled from the sequence from the range [base_frame_id, base_frame_id + max_gap] respectively. Only the frames
+    in which the target is visible are sampled. If enough visible frames are not found, the 'max_gap' is increased
+    gradually until enough frames are found. Both the 'train frames' and the 'test frames' are sorted to preserve the
+    temporal order.
+    # range is max_gap
+
+    The sampled frames are then passed through the input 'processing' function for the necessary processing-
+    """
+
+    def _sample_continuous_ids(self, visible, num_ids=1, min_id=None, max_id=None, step=4):
+        """Samples continuous frames between min_id and max_id for which the target is visible.
+
+        args:
+            visible - 1d Tensor indicating whether the target is visible for each frame.
+            num_ids - Number of frames to be sampled.
+            min_id - Minimum allowed frame number.
+            max_id - Maximum allowed frame number.
+            step - Step size between consecutive frames.
+
+        returns:
+            list - List of sampled frame numbers. None if not enough visible frames could be found.
+        """
+        if min_id is None or min_id < 0:
+            min_id = 0
+        if max_id is None or max_id > len(visible):
+            max_id = len(visible)
+
+        valid_ids = [i for i in range(min_id, max_id) if visible[i]]
+
+        # No visible ids or not enough frames to sample with the given step size
+        if len(valid_ids) < num_ids or len(valid_ids) < num_ids * step:
+            return None
+
+        # Sample continuous frames
+        # print("len(valid_ids)", len(valid_ids))
+        # print("valid_ids", valid_ids)
+        # print("num_ids", num_ids)
+        # print("step", step)
+
+        # Sample continuous frames
+        start_idx = random.choice(range(len(valid_ids) - num_ids * step + 1))
+        sampled_ids = [valid_ids[start_idx + i * step] for i in range(num_ids)]
+        # print("start_idx", start_idx)
+        # print("sampled_ids", sampled_ids)
+
+        return sampled_ids
+
+
+
+    def __init__(self, datasets, p_datasets, samples_per_epoch, max_gap,
+                 num_test_frames, num_train_frames=1, processing=no_processing, frame_step=4, p_reverse=None, p_shuffle=None):
+        """
+        args:
+            datasets - List of datasets to be used for training
+            p_datasets - List containing the probabilities by which each dataset will be sampled
+            samples_per_epoch - Number of training samples per epoch
+            max_gap - Maximum gap, in frame numbers, between the train frames and the test frames.
+            num_test_frames - Number of test frames to sample.
+            num_train_frames - Number of train frames to sample.
+            processing - An instance of Processing class which performs the necessary processing of the data.
+            p_reverse - Probability that a sequence is temporally reversed
+        """
+
+        self.frame_step = frame_step
+
+        self.datasets = datasets
+
+        # If p not provided, sample uniformly from all videos
+        if p_datasets is None:
+            p_datasets = [len(d) for d in self.datasets]
+
+        # Normalize
+        p_total = sum(p_datasets)
+        self.p_datasets = [x/p_total for x in p_datasets]
+
+        self.samples_per_epoch = samples_per_epoch
+        self.max_gap = max_gap
+        self.num_test_frames = num_test_frames
+        self.num_train_frames = num_train_frames
+        self.processing = processing
+
+        self.p_reverse = p_reverse
+        self.p_shuffle = p_shuffle
+
+        # print("num_train_frames", num_train_frames) # 10
+        # print("num_test_frames", num_test_frames) # 5
+        # print("frame_step", frame_step) # 5
+
+    def __len__(self):
+        return self.samples_per_epoch
+
+    def _sample_visible_ids(self, visible, num_ids=1, min_id=None, max_id=None):
+        """ Samples num_ids frames between min_id and max_id for which target is visible
+
+        args:
+            visible - 1d Tensor indicating whether target is visible for each frame
+            num_ids - number of frames to be samples
+            min_id - Minimum allowed frame number
+            max_id - Maximum allowed frame number
+
+        returns:
+            list - List of sampled frame numbers. None if not sufficient visible frames could be found.
+        """
+        if min_id is None or min_id < 0:
+            min_id = 0
+        if max_id is None or max_id > len(visible):
+            max_id = len(visible)
+
+        valid_ids = [i for i in range(min_id, max_id) if visible[i]]
+
+        # No visible ids
+        if len(valid_ids) == 0:
+            return None
+
+        return random.choices(valid_ids, k=num_ids)
+
+    def __getitem__(self, index):
+        """
+        args:
+            index (int): Index (dataset index)
+
+        returns:
+            TensorDict - dict containing all the data blocks
+        """
+
+        # Select a dataset
+        dataset = random.choices(self.datasets, self.p_datasets)[0]
+
+        is_video_dataset = dataset.is_video_sequence()
+
+        reverse_sequence = False
+        shuffle_sequence = False
+
+        if self.p_reverse is not None:
+            reverse_sequence = random.random() < self.p_reverse
+
+        if self.p_shuffle is not None:
+            shuffle_sequence = random.random() < self.p_shuffle
+
+        # Sample a sequence with enough visible frames
+        enough_visible_frames = False
+
+        # ran_frame_step = 8
+
+        while not enough_visible_frames:
+            # print("not enough_visible_frames")
+            # Sample a sequence
+            seq_id = random.randint(0, dataset.get_num_sequences() - 1)
+
+            # Sample frames
+            seq_info_dict = dataset.get_sequence_info(seq_id)
+            visible = seq_info_dict['visible']
+
+            if self.frame_step == "ran8":
+                ran_frame_step = random.randint(1, 8)
+                enough_visible_frames = visible.type(torch.int64).sum().item() > ran_frame_step * (self.num_test_frames + self.num_train_frames)
+            elif self.frame_step == "ran4":
+                ran_frame_step = random.randint(1, 4)
+                enough_visible_frames = visible.type(torch.int64).sum().item() > ran_frame_step * (self.num_test_frames + self.num_train_frames)
+            elif self.frame_step == "ran2":
+                ran_frame_step = random.randint(1, 2)
+                enough_visible_frames = visible.type(torch.int64).sum().item() > ran_frame_step * (self.num_test_frames + self.num_train_frames)
+            else:
+                enough_visible_frames = visible.type(torch.int64).sum().item() > self.frame_step * (self.num_test_frames + self.num_train_frames)
+
+                # print("ran_frame_step", ran_frame_step)
+
+            enough_visible_frames = enough_visible_frames or not is_video_dataset
+
+        if is_video_dataset:
+            train_frame_ids = None
+            test_frame_ids = None
+            gap_increase = 0
+
+            # Sample test and train frames in a causal manner, i.e. test_frame_ids > train_frame_ids
+            while test_frame_ids is None:
+                # print("gap_increase", gap_increase)
+                if gap_increase > 2000:
+                    raise Exception('Frame not found')
+
+                # if not reverse_sequence:
+                # print("not reverse_sequence")
+                base_frame_id = self._sample_visible_ids(visible, num_ids=1, min_id=self.num_train_frames - 1,
+                                                            max_id=len(visible)-self.num_test_frames)
+                prev_frame_ids = self._sample_visible_ids(visible, num_ids=self.num_train_frames - 1,
+                                                            min_id=base_frame_id[0] - self.max_gap - gap_increase,
+                                                            max_id=base_frame_id[0])
+                if prev_frame_ids is None:
+                    gap_increase += 5
+                    continue
+
+                # print("base_frame_id", base_frame_id)
+                # print("self.num_train_frames", self.num_train_frames)
+                # print("len(visible)", len(visible))
+                # print("self.num_test_frames", self.num_test_frames)
+
+                if self.frame_step == "ran8":
+                    train_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_train_frames, min_id=0, max_id=len(visible) - self.num_test_frames, step=ran_frame_step)
+                    test_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_test_frames, min_id=train_frame_ids[-1] + 1, max_id=len(visible), step=ran_frame_step)
+                elif self.frame_step == "ran4":
+                    train_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_train_frames, min_id=0, max_id=len(visible) - self.num_test_frames, step=ran_frame_step)
+                    test_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_test_frames, min_id=train_frame_ids[-1] + 1, max_id=len(visible), step=ran_frame_step)
+                elif self.frame_step == "ran2":
+                    train_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_train_frames, min_id=0, max_id=len(visible) - self.num_test_frames, step=ran_frame_step)
+                    test_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_test_frames, min_id=train_frame_ids[-1] + 1, max_id=len(visible), step=ran_frame_step)
+                else:
+                    train_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_train_frames, min_id=0, max_id=len(visible) - self.num_test_frames, step=self.frame_step)
+                    test_frame_ids = self._sample_continuous_ids(visible, num_ids=self.num_test_frames, min_id=train_frame_ids[-1] + 1, max_id=len(visible), step=self.frame_step)
+
+                # Increase gap until a frame is found
+                gap_increase += 5
+        else:
+            # In case of image dataset, just repeat the image to generate synthetic video
+            train_frame_ids = [1]*self.num_train_frames
+            test_frame_ids = [1]*self.num_test_frames
+
+        # print("train_frame_ids 0", train_frame_ids)
+        # print("test_frame_ids 0", test_frame_ids)
+
+        # Sort frames
+        train_frame_ids = sorted(train_frame_ids, reverse=reverse_sequence)
+        test_frame_ids = sorted(test_frame_ids, reverse=reverse_sequence)
+
+        # print("train_frame_ids ori", train_frame_ids)  
+
+        # Randomly pick 2 distinct IDs from train_frame_ids
+        if len(train_frame_ids) >= 2:
+            two_ids = random.sample(train_frame_ids, k=2)
+            # Optionally, sort the chosen subset if order matters
+            two_ids = sorted(two_ids, reverse=reverse_sequence)
+            train_frame_ids = two_ids
+        else:
+            # Fallback logic if fewer than 2 frames exist
+            pass
+
+   
+        # print("train_frame_ids 1", train_frame_ids)
+        # print("test_frame_ids 1", test_frame_ids)
+
+        if shuffle_sequence:
+            random.shuffle(train_frame_ids)
+            random.shuffle(test_frame_ids)
+
+        # print("train_frame_ids 2", train_frame_ids)
+        # print("test_frame_ids 2", test_frame_ids)
+
+
+        # case:
+        #     self.num_test_frames = 16
+        #     self.num_train_frames = 2
+        #     frame_step = 8
+        # train_frame_ids 1 [2226, 2234]
+        # test_frame_ids 1 [2452, 2460, 2468, 2476, 2484, 2492, 2500, 2508]
+
+        # input()
+
+
+        all_frame_ids = train_frame_ids + test_frame_ids
+
+        # print("all_frame_ids", all_frame_ids)
+        # print("seq_id", seq_id)
+
+        # Load frames
+        all_frames, all_anno, meta_obj_test  = dataset.get_frames(seq_id, all_frame_ids, seq_info_dict)
+
+        train_frames = all_frames[:len(train_frame_ids)]
+        test_frames = all_frames[len(train_frame_ids):]
+
+        train_anno = {}
+        test_anno = {}
+        for key, value in all_anno.items():
+            train_anno[key] = value[:len(train_frame_ids)]
+            test_anno[key] = value[len(train_frame_ids):]
+
+        data = TensorDict({'train_images': train_frames,
+                           'train_anno': train_anno['bbox'],
+                           'test_images': test_frames,
+                           'test_anno': test_anno['bbox'],
+                           'test_class': meta_obj_test.get('object_class_name')})
+
+
+        return self.processing(data)
