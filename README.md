@@ -11,7 +11,7 @@ This is a Generic Object Tracking Project
 Human perception for object tracking in a 2D video stream arises from the implicit use of prior visual geometry 🛰️ and semantic reasoning 👁️. GOT-Edit aligns with this principle by enabling trackers to infer 3D geometry from 2D streaming inputs for visual tracking.
 
 The core of this work is **cross-modality online model editing**. This mechanism performs online constrained model updates to incorporate geometric information adaptively while preserving semantic discrimination for online adaptation under streaming 2D inputs.
-This paradigm is **generalizable across diverse scenarios and environments** 🌐. We hope these advances chart a path toward reliability, safety, and social responsibility in vision systems
+This paradigm is **generalizable across diverse scenarios and environments** 🌐. We hope these advances chart a path toward reliability, safety, and social responsibility in vision systems.
 
 ### Raw Results
 
@@ -44,7 +44,16 @@ python evaluate_GOT_Edit_results.py
 
 For the GOT-10K and TrackingNet results, please refer to the public leaderboards on the official evaluation websites for both challenges under the entry named “Edit” or “GOT-Edit.” The NfS results follow the evaluation protocol described [here](https://github.com/visionml/pytracking/issues/400).
 
-- 💻 Code: More details will be updated soon
+### Training script
+
+Change directory to `GOT/pytracking/`:
+
+```bash
+cd GOT/pytracking/
+CUDA_VISIBLE_DEVICES=0,1,2,3 python ltr/run_training_dsA.py tomp GOT-Edit_DA3_378
+```
+
+- 💻 Code and pretrained model: More details will be updated soon.
 
 ## Consider citing “GOT-Edit” if this project impresses you
 
