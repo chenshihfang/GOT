@@ -4,7 +4,7 @@ import shutil
 from pytracking.evaluation.environment import env_settings
 
 
-def pack_got10k_results(tracker_name, param_name, output_name):
+def pack_got10k_results(tracker_name, param_name, output_name, timesteps=3):
     """ Packs got10k results into a zip folder which can be directly uploaded to the evaluation server. The packed
     file is saved in the folder env_settings().got_packed_results_path
 
@@ -28,14 +28,22 @@ def pack_got10k_results(tracker_name, param_name, output_name):
         if not os.path.exists(seq_output_path):
             os.makedirs(seq_output_path)
 
-        for run_id in range(1):
+        for run_id in range(timesteps):
             res = np.loadtxt('{}/{}/{}_{:03d}/{}.txt'.format(results_path, tracker_name, param_name, run_id, seq_name), dtype=np.float64)
-            times = np.loadtxt(
-                '{}/{}/{}_{:03d}/{}_time.txt'.format(results_path, tracker_name, param_name, run_id, seq_name),
-                dtype=np.float64)
+
+            try:
+                times = np.loadtxt(
+                    '{}/{}/{}_{:03d}/{}_time.txt'.format(results_path, tracker_name, param_name, run_id, seq_name),
+                    dtype=np.float64)
+            except:
+                pass
 
             np.savetxt('{}/{}_{:03d}.txt'.format(seq_output_path, seq_name, run_id+1), res, delimiter=',', fmt='%f')
-            np.savetxt('{}/{}_time.txt'.format(seq_output_path, seq_name), times, fmt='%f')
+
+            try:
+                np.savetxt('{}/{}_time.txt'.format(seq_output_path, seq_name), times, fmt='%f')
+            except:
+                pass
 
     # Generate ZIP file
     shutil.make_archive(output_path, 'zip', output_path)
