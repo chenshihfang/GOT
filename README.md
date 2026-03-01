@@ -67,6 +67,16 @@ sudo apt-get install libturbojpeg
 ```  
 
 
+#### Set Up the Dataset Environment
+
+You can follow the setup instructions from [PyTracking](https://github.com/visionml/pytracking).
+
+There are two different `local.py` files located in:
+
+- `ltr/admin`
+- `pytracking/evaluation`
+
+
 ### Training script
 
 Change directory to `GOT/pytracking/`:
@@ -111,34 +121,6 @@ You need to provide the conda install path and the name for the created conda en
 bash install_PiVOT.sh /your_anaconda3_path/ got_pivot
 conda activate got_pivot
 ```  
-
-#### Set Up the Dataset Environment
-
-You can follow the setup instructions from [PyTracking](https://github.com/visionml/pytracking).
-
-There are two different `local.py` files located in:
-
-- `ltr/admin`
-- `pytracking/evaluation`
-
-### Evaluate the Tracking Performance Based on Datasets
-
-```bash
-python evaluate_PiVOT_results.py  
-```  
-
-### Pretrained Model
-The pretrained model can be downloaded from [here](https://drive.google.com/drive/folders/1XTFDKt9uTXuODZ0RZ4feD7L98ZBrDmbW?usp=sharing).
-
-
-### Evaluate the Tracker
-
-1. First, set the parameter `self.infer` to `True` in `ltr/models/tracking/tompnet.py`.
-2. Second, set up the Pretrained Model path in `pytracking/pytracking/parameter/tomp/pivotL27.py`.
-3. Then execute the following command:
-
-   ```bash
-   CUDA_VISIBLE_DEVICES=0 python pytracking/run_experiment.py myexperiments_pivot pivot --debug 0 --threads 1
 
 
 ## Acknowledgement
