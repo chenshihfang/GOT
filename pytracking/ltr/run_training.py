@@ -48,6 +48,9 @@ def main():
     args = parser.parse_args()
     run_training(args.train_module, args.train_name, args.cudnn_benchmark)
 
+    # run_training('tomp', 'tomp50_dinov2L_384_378_27x27_24x24', 1)
+
+
 if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
     main()
