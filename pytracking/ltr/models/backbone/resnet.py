@@ -39,22 +39,6 @@ import traceback
 
 
 
-# try:
-#     print("import CoTrackerPredictor")
-#     from cotracker2.co_tracker.cotracker.predictor import CoTrackerPredictor
-#     print("imported True")
-# except:
-#     print("bypass import CoTrackerPredictor False") # require install cotracker / _init_.py
-#     pass
-
-# from cotracker.predictor import CoTrackerPredictor
-
-
-# def dinov2_VGGT(checkpoint_path="facebook/VGGT-1B", device='cuda'):
-
-#     dinov2 = VGGT.from_pretrained(checkpoint_path).to(device)
-#     return dinov2
-
 def dinov2_DA3(checkpoint_path="depth-anything/da3-large", device="cuda"):
     """
     Load Depth Anything 3 base model from Hugging Face hub.
@@ -83,7 +67,7 @@ def dinov2_DA3(checkpoint_path="depth-anything/da3-large", device="cuda"):
 
 
 
-def dinov2_StreamVGGT(checkpoint_path="/home/sfchen94/pytrackingcsf/pytracking/ltr/StreamVGGT/src/streamvggt/ckpt/checkpoints.pth", device='cuda'):
+def dinov2_StreamVGGT(checkpoint_path="/data/pytrackingcsf/pytracking/ltr/StreamVGGT/src/streamvggt/ckpt/checkpoints.pth", device='cuda'):
     """
     Loads the StreamVGGT model from a local checkpoint file.
     """
@@ -196,7 +180,7 @@ def dinov3(dino_name):
     if dino_name not in model_weights:
         raise ValueError(f"Unsupported DINOv3 model: {dino_name}")
 
-    REPO_DIR = "/home/sfchen94/pytrackingcsf/dinov3/"
+    REPO_DIR = "/data/pytrackingcsf/dinov3/"
 
     print(f"Loading {dino_name} with weights from remote URL.")
     model = torch.hub.load(
@@ -223,8 +207,8 @@ def dinov3_(dino_name):
         raise ValueError(f"Unsupported DINOv3 model: {dino_name}")
 
     MODEL_WEIGHTS_FILE = model_weights[dino_name]
-    WEIGHT_PATH = "/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth"
-    REPO_DIR = "/home/sfchen94/pytrackingcsf/dinov3/"
+    WEIGHT_PATH = "/data/pytrackingcsf/dinov3_vitl16.pth"
+    REPO_DIR = "/data/pytrackingcsf/dinov3/"
 
     if not os.path.exists(WEIGHT_PATH):
         raise FileNotFoundError(f"Model weights not found at: {WEIGHT_PATH}")
@@ -278,7 +262,7 @@ def dinov3_(dino_name):
 #     model = DinoVisionTransformer(**model_params)
     
 #     # Load your local weights
-#     weights_DIR = "/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth"
+#     weights_DIR = "/data/pytrackingcsf/dinov3_vitl16.pth"
 #     checkpoint = torch.load(weights_DIR, map_location='cpu')
 
 #     # Load the state dictionary from the checkpoint file
@@ -305,7 +289,7 @@ def dinov3_(dino_name):
 # def dinov3(model_name="dinov3_vitl16"):
 #     # This function is now simplified and directly uses the installed package.
 #     # The `model_name` argument might become redundant if you're only loading one specific model.
-#     weights_DIR = "/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth"
+#     weights_DIR = "/data/pytrackingcsf/dinov3_vitl16.pth"
     
 #     # Load the model directly from the installed package
 #     dinov3_model = load_dinov3_vitl16(weights=weights_DIR)
@@ -327,8 +311,8 @@ def dinov3_(dino_name):
 
 #     # wget -O dinov3_vitl16.pth ""
 
-#     REPO_DIR = "/home/sfchen94/pytrackingcsf/dinov3/"
-#     weights_DIR = "/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth"
+#     REPO_DIR = "/data/pytrackingcsf/dinov3/"
+#     weights_DIR = "/data/pytrackingcsf/dinov3_vitl16.pth"
     
 
 #     # DINOv3 ViT models pretrained on web images
@@ -337,7 +321,7 @@ def dinov3_(dino_name):
 #     dinov3 = torch.hub.load(
 #         repo_or_dir="facebookresearch/dinov3",
 #         model="dinov3_vitl16",
-#         weights="/data1/sfchen94/pytrackingcsf/dinov3_vitl16.pth",
+#         weights="/data/pytrackingcsf/dinov3_vitl16.pth",
 #     )
 
 #     # dinov3 = torch.hub.load('facebookresearch/dinov3', model_name)

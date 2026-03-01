@@ -1,8 +1,8 @@
 import os
 import shutil
 
-source_dir = '/ssddisk/sfchen9494/tracking_dataset/nfs_pytracking/anno'
-destination_dir = '/ssddisk/sfchen9494/tracking_dataset/NFS/data'
+source_dir = '/data/tracking_dataset/nfs_pytracking/anno'
+destination_dir = '/data/tracking_dataset/NFS/data'
 
 # Loop through all files in the source directory
 for filename in os.listdir(source_dir):

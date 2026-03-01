@@ -26,10 +26,15 @@ class TrackingNetDataset(BaseDataset):
         if not isinstance(sets, (list, tuple)):
             if sets == 'TEST':
                 sets = ['TEST']
-            elif sets == 'TRAIN':
-                sets = ['TRAIN_{}'.format(i) for i in range(5)]
+            # elif sets == 'TRAIN':
+            #     sets = ['TRAIN_{}'.format(i) for i in range(5)]
 
         self.sequence_list = self._list_sequences(self.base_path, sets)
+
+        # self.sequence_list = self._list_sequences_sub(self.base_path, sets, seq=1)
+        # self.sequence_list = self._list_sequences_sub(self.base_path, sets, seq=2)
+        # self.sequence_list = self._list_sequences_sub(self.base_path, sets, seq=3)
+        # self.sequence_list = self._list_sequences_sub(self.base_path, sets, seq=4)
 
         self.vos_mode = vos_mode
 
@@ -87,4 +92,57 @@ class TrackingNetDataset(BaseDataset):
 
             sequence_list += sequences_cur_set
 
+        return sequence_list
+
+    def _list_sequences_sub(self, root, set_ids, seq=None, num_splits=4):
+        """
+        Args:
+            root: dataset root
+            set_ids: iterable of set names (e.g. ["TEST"])
+            seq: None or "1".."num_splits" (or int 1..num_splits)
+            num_splits: number of splits, default 4
+
+        Returns:
+            sequence_list: full list if seq is None, else 1 chunk of the list
+        """
+        sequence_list = []
+
+        for s in set_ids:
+            anno_dir = os.path.join(root, s, "anno")
+            files = [f for f in os.listdir(anno_dir) if f.endswith(".txt")]
+            files.sort()  # IMPORTANT: deterministic order
+
+            sequences_cur_set = [(s, os.path.splitext(f)[0]) for f in files]
+            sequence_list.extend(sequences_cur_set)
+
+        # Optional: also sort the combined list to be fully deterministic across sets
+        sequence_list.sort()
+
+        total = len(sequence_list)
+
+        if seq is not None:
+            # accept "1".."4" or 1..4
+            if isinstance(seq, str):
+                if not seq.isdigit():
+                    raise ValueError(f"seq must be a digit string like '1'..'{num_splits}', got: {seq}")
+                seq_i = int(seq)
+            else:
+                seq_i = int(seq)
+
+            if not (1 <= seq_i <= num_splits):
+                raise ValueError(f"seq must be in [1, {num_splits}], got: {seq_i}")
+
+            # split sizes: first (total % num_splits) chunks get +1
+            base = total // num_splits
+            rem = total % num_splits
+
+            # start index for chunk (seq_i-1)
+            k = seq_i - 1
+            start = k * base + min(k, rem)
+            end = start + base + (1 if k < rem else 0)
+
+            sequence_list = sequence_list[start:end]
+
+        print(sequence_list)
+        print(len(sequence_list))
         return sequence_list

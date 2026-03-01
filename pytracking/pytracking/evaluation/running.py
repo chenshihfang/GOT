@@ -155,14 +155,37 @@ def run_sequence(seq: Sequence, tracker: Tracker, debug=False, visdom_info=None)
 
     sys.stdout.flush()
 
-    if isinstance(output['time'][0], (dict, OrderedDict)):
-        exec_time = sum([sum(times.values()) for times in output['time']])
-        num_frames = len(output['time'])
-    else:
-        exec_time = sum(output['time'])
-        num_frames = len(output['time'])
+    ###### This records the heavy setup time (compiling, loading memory) as the time for the "first frame".
+    # if isinstance(output['time'][0], (dict, OrderedDict)):
+    #     exec_time = sum([sum(times.values()) for times in output['time']])
+    #     num_frames = len(output['time'])
+    # else:
+    #     exec_time = sum(output['time'])
+    #     num_frames = len(output['time'])
 
-    print('FPS: {}'.format(num_frames / exec_time))
+    # print('FPS: {}'.format(num_frames / exec_time))
+    ###### 
+
+    # Define tracking_times excluding the first element (initialization time)
+    skip_frames = 20
+
+    # Check if we have enough frames to calculate FPS
+    if len(output['time']) > skip_frames:
+        # Slice the list to skip the first 20 elements
+        tracking_times = output['time'][skip_frames:]
+        
+        if isinstance(tracking_times[0], (dict, OrderedDict)):
+            exec_time = sum([sum(times.values()) for times in tracking_times])
+        else:
+            exec_time = sum(tracking_times)
+            
+        num_frames = len(tracking_times)
+        
+        # Calculate FPS based on the remaining frames
+        print('FPS: {}'.format(num_frames / exec_time))
+    else:
+        # Fallback if the video is too short
+        print(f'FPS: N/A (Sequence shorter than {skip_frames} frames)')
 
     if not debug:
         if seq.dataset == 'oxuva':

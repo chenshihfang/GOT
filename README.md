@@ -77,6 +77,12 @@ There are two different `local.py` files located in:
 - `pytracking/evaluation`
 
 
+
+#### Set Up the Checkpoint Environment
+
+Updating the checkpoint path in `tr/models/backbone/resnet.py` is required.
+
+
 ### Training script
 
 Change directory to `GOT/pytracking/`:
