@@ -138,27 +138,6 @@ If you find this repository useful, please consider giving a star :star: and a c
 
 
 ```
-@ARTICLE{TMM_PiVOT,
-author={Chen, Shih-Fang and Chen, Jun-Cheng and Jhuo, I-Hong and Lin, Yen-Yu},
-journal={IEEE Transactions on Multimedia}, 
-title={Improving Visual Object Tracking Through Visual Prompting}, 
-year={2025},
-volume={27},
-number={},
-pages={2682-2694},
-doi={10.1109/TMM.2025.3535323}}
-```
-
-```
-@inproceedings{got_jepa,
-title     = {{GOT}-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture},
-author    = {Shih-Fang Chen and Jun-Cheng Chen and I-Hong Jhuo and Yen-Yu Lin},
-booktitle = {Arxiv},
-year      = {2026}
-}
-```
-
-```
 @inproceedings{gotedit2026iclr,
 title     = {{GOT}-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing},
 author    = {Shih-Fang Chen and Jun-Cheng Chen and I-Hong Jhuo and Yen-Yu Lin},
@@ -166,6 +145,26 @@ booktitle = {Proc. Int. Conf. Learn. Represent. (ICLR)},
 year      = {2026}
 }
 ```
+
+```
+@ARTICLE{TCSVT_GOT_JEPA,
+title={{GOT}-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture}, 
+author={Chen, Shih-Fang and Chen, Jun-Cheng and Jhuo, I-Hong and Lin, Yen-Yu},
+journal={IEEE Transactions on Circuits and Systems for Video Technology}, 
+year={2026}}
+```
+
+```
+@ARTICLE{TMM_PiVOT,
+title={Improving Visual Object Tracking Through Visual Prompting}, 
+author={Chen, Shih-Fang and Chen, Jun-Cheng and Jhuo, I-Hong and Lin, Yen-Yu},
+journal={IEEE Transactions on Multimedia}, 
+year={2025},
+volume={27},
+pages={2682-2694},
+doi={10.1109/TMM.2025.3535323}}
+```
+
 
 
 ## Contact:
