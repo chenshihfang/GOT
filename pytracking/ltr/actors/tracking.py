@@ -1262,3 +1262,783 @@ class ToMPActor_PiVOT(BaseActor):
 
         return loss, stats
 
+
+### Joint Training of the GOT-JEPA Point Tracker
+class ToMPActor_PT(BaseActor):
+    """Actor for training the DiMP network."""
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {'bb_ce': 1.0}
+        self.loss_weight = loss_weight
+
+    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+
+        # print("ltrb_gth.shape", ltrb_gth.shape) # 
+        # print("ltrb_pred.shape", ltrb_pred.shape) #
+
+        if ltrb_pred.dim() == 4:
+            ltrb_pred = ltrb_pred.unsqueeze(0)
+
+        n = scores.shape[1]
+        ids = scores.reshape(1, n, -1).max(dim=2)[1]
+        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+
+        # print("g.shape", g.shape) # torch.Size([1, 1, 4, 1, 1])
+        # print("p.shape", p.shape) # torch.Size([1, 1, 4, 1, 1])
+
+        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+
+        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
+
+        return ious_pred_center
+
+
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+
+        train_imgs_all_ = data['train_images']
+        test_imgs_all_ = data['test_images']
+        train_bb_in = data['train_anno']
+        train_label_ = data['train_label']
+        train_ltrb_target_ = data['train_ltrb_target']
+        test_ltrb_target = data['test_ltrb_target']
+        test_sample_region_ = data['test_sample_region']
+        test_label_ = data['test_label']
+        test_anno_ = data['test_anno']
+
+        test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
+
+        # print("train_label_.shape",  train_label_.shape) # torch.Size([10, 3, 27, 27])
+
+        # Assuming train_imgs_all_ has twice the number of elements as test_imgs_all_
+
+        # print("test_imgs_all_",len(test_imgs_all_)) 
+        # input()
+
+        half_length = int(len(train_imgs_all_)/2)
+        # print("half_length", half_length)
+
+        train_bb_first_  = torch.cat((train_bb_in[0].unsqueeze(0), train_bb_in[half_length].unsqueeze(0)), dim=0)
+        train_bb_last_ = torch.cat((train_bb_in[half_length - 1].unsqueeze(0), train_bb_in[-1].unsqueeze(0)), dim=0)
+        train_label_last = torch.cat((train_label_[half_length - 1].unsqueeze(0), train_label_[-1].unsqueeze(0)), dim=0)
+        train_label_first_ = torch.cat((train_label_[0].unsqueeze(0), train_label_[half_length].unsqueeze(0)), dim=0)
+        train_imgs_ = torch.cat((train_imgs_all_[half_length - 1].unsqueeze(0), train_imgs_all_[-1].unsqueeze(0)), dim=0)
+        train_ltrb_target_ = torch.cat((train_ltrb_target_[half_length - 1].unsqueeze(0), train_ltrb_target_[-1].unsqueeze(0)), dim=0)
+
+        test_bb_ = test_anno_[-1].unsqueeze(0)
+        test_bb_first_  = test_anno_[0].unsqueeze(0)
+
+        test_sample_region_ = test_sample_region_[-1].unsqueeze(0)
+        test_anno_ = test_anno_[-1].unsqueeze(0)
+
+        test_label_last_ = data['test_label'][-1].unsqueeze(0)
+
+        test_label_first_ = data['test_label'][0].unsqueeze(0) # second dim is batch
+        test_label_mid = data['test_label'][len(data) // 2].unsqueeze(0)
+        # test_label_first_ = data['test_label'][0:6] # seq
+        # test_label_mid = None
+
+
+        test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
+
+        test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
+        test_ltrb_target_mid_ = test_ltrb_target[len(data) // 2].unsqueeze(0)
+        
+
+        target_scores, bbox_preds = self.net( \
+                                            train_imgs=train_imgs_,
+                                             test_imgs=test_imgs_,
+                                             train_imgs_all=train_imgs_all_,
+                                             test_imgs_all=test_imgs_all_,
+                                             train_bb=train_bb_last_, 
+                                             train_bb_first = train_bb_first_,
+                                             test_bb_first=test_bb_first_,
+                                             train_label=train_label_last,
+                                             train_label_first=train_label_first_,
+                                             test_label_first=test_label_first_,
+                                             test_label_mid=test_label_mid,
+                                             train_ltrb_target=train_ltrb_target_,
+                                             test_ltrb_target_first=test_ltrb_target_first_,
+                                             test_ltrb_target_mid=test_ltrb_target_mid_,
+                                             )
+
+        loss_giou, ious = self.objective['giou'](bbox_preds, test_ltrb_target_, test_sample_region_)
+
+        clf_loss_test = self.objective['test_clf'](target_scores, test_label_last_, test_anno_)
+        # track_clf_loss_test = self.objective['test_clf'](track_scores, test_label_last_, test_anno_)
+
+        loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
+        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
+        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * track_clf_loss_test
+
+        # loss = 0.01 * loss_giou + 0.01 * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
+
+        if torch.isnan(loss):
+            raise ValueError('NaN detected in loss')
+
+        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        # track_ious_pred_center = self.compute_iou_at_max_score_pos(track_scores, data['test_ltrb_target'], bbox_preds)
+
+        # print("data['test_ltrb_target']", data['test_ltrb_target'])
+        # input()
+
+        stats = {'Loss/total': loss.item(),
+                 'Loss/GIoU': loss_giou.item(),
+                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
+                 'Loss/clf_loss_test': clf_loss_test.item(),
+                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
+                 'mIoU': ious.mean().item(),
+                 'maxIoU': ious.max().item(),
+                 'minIoU': ious.min().item(),
+                 'mIoU_pred_center': ious_pred_center.mean().item(),
+
+                 }
+
+        if ious.max().item() > 0:
+            stats['stdIoU'] = ious[ious>0].std().item()
+
+        return loss, stats
+        
+
+### Joint Training of the GOT-JEPA Point Tracker
+class ToMPActor_PTcurq2(BaseActor):
+    """Actor for training the DiMP network."""
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {'bb_ce': 1.0}
+        self.loss_weight = loss_weight
+
+    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+
+        if ltrb_pred.dim() == 4:
+            ltrb_pred = ltrb_pred.unsqueeze(0)
+
+        n = scores.shape[1]
+        ids = scores.reshape(1, n, -1).max(dim=2)[1]
+        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+
+        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+
+        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
+
+        return ious_pred_center
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+
+        train_imgs_all_ = data['train_images']
+        test_imgs_all_ = data['test_images']
+        train_bb_in = data['train_anno']
+        train_label_ = data['train_label']
+        train_ltrb_target_ = data['train_ltrb_target']
+        test_ltrb_target = data['test_ltrb_target']
+        test_sample_region_ = data['test_sample_region']
+        test_label_ = data['test_label']
+        test_anno_ = data['test_anno']
+
+        # print("test_anno_.shape", test_anno_.shape) # torch.Size([8, 3, 4])
+        # print("len(test_anno_) // 2", len(test_anno_) // 2) # 4
+        # print("len(test_anno_)", len(test_anno_))  # 8
+        # print("len(data)", len(data))  #13
+        # print("len(train_imgs_all_)", len(train_imgs_all_))  # 16
+        # print("train_imgs_all_.shape", train_imgs_all_.shape) # torch.Size([16, 3, 3, 432, 432])
+        # print("len(data['test_label'])", len(data['test_label']))  # 8
+        # print("data['test_label'].shape", data['test_label'].shape)  # torch.Size([8, 3, 27, 27])
+        # print("len(test_ltrb_target)", len(test_ltrb_target))  # 8
+        # print("test_ltrb_target.shape", test_ltrb_target.shape)  # torch.Size([8, 3, 4, 27, 27])
+
+        test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
+
+        half_length = int(len(train_imgs_all_)/2)
+
+        # train_bb_first_  = torch.cat((train_bb_in[0].unsqueeze(0), train_bb_in[half_length].unsqueeze(0)), dim=0)
+        train_bb_last_ = torch.cat((train_bb_in[half_length - 1].unsqueeze(0), train_bb_in[-1].unsqueeze(0)), dim=0)
+        train_label_last = torch.cat((train_label_[half_length - 1].unsqueeze(0), train_label_[-1].unsqueeze(0)), dim=0)
+        # train_label_first_ = torch.cat((train_label_[0].unsqueeze(0), train_label_[half_length].unsqueeze(0)), dim=0)
+        train_imgs_ = torch.cat((train_imgs_all_[half_length - 1].unsqueeze(0), train_imgs_all_[-1].unsqueeze(0)), dim=0)
+        train_ltrb_target_ = torch.cat((train_ltrb_target_[half_length - 1].unsqueeze(0), train_ltrb_target_[-1].unsqueeze(0)), dim=0)
+
+        test_bb_ = test_anno_[-1].unsqueeze(0)
+
+        test_bb_first_  = test_anno_[0].unsqueeze(0)
+        test_bb_mid_  = test_anno_[len(test_anno_) // 2].unsqueeze(0)
+
+        test_sample_region_ = test_sample_region_[-1].unsqueeze(0)
+        test_anno_ = test_anno_[-1].unsqueeze(0)
+
+        test_label_last_ = data['test_label'][-1].unsqueeze(0)
+
+        test_label_first_ = data['test_label'][0].unsqueeze(0) # second dim is batch
+        test_label_mid = data['test_label'][len(test_anno_) // 2].unsqueeze(0)
+        # print("check_here")
+
+        test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
+
+        # test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
+        # test_ltrb_target_mid_ = test_ltrb_target[len(test_anno_) // 2].unsqueeze(0)
+
+        target_scores, bbox_preds, target_scores_PT, bbox_preds_PT = self.net( \
+                                        train_imgs=train_imgs_,
+                                        test_imgs=test_imgs_,
+                                        train_imgs_all=train_imgs_all_,
+                                        test_imgs_all=test_imgs_all_,
+                                        train_bb=train_bb_last_, 
+                                        # train_bb_first = train_bb_first_,
+                                        test_bb_first=test_bb_first_,
+                                        test_bb_mid=test_bb_mid_,
+                                        train_label=train_label_last,
+                                        # train_label_first=train_label_first_,
+                                        test_label_first=test_label_first_,
+                                        test_label_mid=test_label_mid,
+                                        train_ltrb_target=train_ltrb_target_,
+                                        # test_ltrb_target_first=test_ltrb_target_first_,
+                                        # test_ltrb_target_mid=test_ltrb_target_mid_,
+                                        )
+
+
+        loss_giou, ious = self.objective['giou'](bbox_preds, test_ltrb_target_, test_sample_region_)
+
+        loss_giou_PT, ious_PT = self.objective['giou'](bbox_preds_PT, test_ltrb_target_, test_sample_region_)
+
+
+        clf_loss_test = self.objective['test_clf'](target_scores, test_label_last_, test_anno_)
+        clf_loss_test_PT = self.objective['test_clf'](target_scores_PT, test_label_last_, test_anno_)
+        loss_ToMP = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
+        loss_PT = self.loss_weight['giouPT'] * loss_giou_PT + self.loss_weight['test_clfPT'] * clf_loss_test_PT
+
+        loss = loss_ToMP + loss_PT
+               
+        if torch.isnan(loss):
+            raise ValueError('NaN detected in loss')
+
+        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        ious_pred_centerPT = self.compute_iou_at_max_score_pos(target_scores_PT, data['test_ltrb_target'], bbox_preds)
+
+
+        stats = {'Loss/total': loss.item(),
+                 'Loss/GIoU': loss_giou.item(),
+                 'Loss/GIoUPT': loss_giou_PT.item(),
+                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
+                 'Loss/weighted_GIoUPT': self.loss_weight['giouPT']*loss_giou_PT.item(),
+                 'Loss/clf_loss_test': clf_loss_test.item(),
+                 'Loss/clf_loss_testPT': clf_loss_test_PT.item(),
+                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
+                 'Loss/weighted_clf_loss_testPT': self.loss_weight['test_clfPT']*clf_loss_test_PT.item(),
+                 'mIoU': ious.mean().item(),
+                 'mIoUPT': ious_PT.mean().item(),
+                 'maxIoU': ious.max().item(),
+                 'maxIoUPT': ious_PT.max().item(),
+                 'minIoU': ious.min().item(),
+                 'minIoUPT': ious_PT.min().item(),
+                 'mIoU_pred_center': ious_pred_center.mean().item(),
+                 'mIoU_pred_centerPT': clf_loss_test_PT.mean().item(),
+                'Loss/loss_ToMP': loss_ToMP.item(),
+                'Loss/loss_PT': loss_PT.item(),   
+                 }
+
+        if ious.max().item() > 0:
+            stats['stdIoU'] = ious[ious>0].std().item()
+
+        return loss, stats
+        
+
+### Joint Training of the GOT-JEPA Point Tracker
+class ToMPActor_PTcur(BaseActor):
+    """Actor for training the DiMP network."""
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {'bb_ce': 1.0}
+        self.loss_weight = loss_weight
+
+    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+
+        # print("ltrb_gth.shape", ltrb_gth.shape) # 
+        # print("ltrb_pred.shape", ltrb_pred.shape) #
+
+        if ltrb_pred.dim() == 4:
+            ltrb_pred = ltrb_pred.unsqueeze(0)
+
+        n = scores.shape[1]
+        ids = scores.reshape(1, n, -1).max(dim=2)[1]
+        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+
+        # print("g.shape", g.shape) # torch.Size([1, 1, 4, 1, 1])
+        # print("p.shape", p.shape) # torch.Size([1, 1, 4, 1, 1])
+
+        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+
+        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
+
+        return ious_pred_center
+
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+
+        train_imgs_all_ = data['train_images']
+        test_imgs_all_ = data['test_images']
+        train_bb_in = data['train_anno']
+        train_label_ = data['train_label']
+        train_ltrb_target_ = data['train_ltrb_target']
+        test_ltrb_target = data['test_ltrb_target']
+        test_sample_region_ = data['test_sample_region']
+        test_label_ = data['test_label']
+        test_anno_ = data['test_anno']
+
+        test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
+
+        # print("train_label_.shape",  train_label_.shape) # torch.Size([10, 3, 27, 27])
+
+        # Assuming train_imgs_all_ has twice the number of elements as test_imgs_all_
+
+        # print("test_imgs_all_",len(test_imgs_all_)) 
+        # input()
+
+        half_length = int(len(train_imgs_all_)/2)
+        # print("half_length", half_length)
+
+        train_bb_first_  = torch.cat((train_bb_in[0].unsqueeze(0), train_bb_in[half_length].unsqueeze(0)), dim=0)
+        train_bb_last_ = torch.cat((train_bb_in[half_length - 1].unsqueeze(0), train_bb_in[-1].unsqueeze(0)), dim=0)
+        train_label_last = torch.cat((train_label_[half_length - 1].unsqueeze(0), train_label_[-1].unsqueeze(0)), dim=0)
+        train_label_first_ = torch.cat((train_label_[0].unsqueeze(0), train_label_[half_length].unsqueeze(0)), dim=0)
+        train_imgs_ = torch.cat((train_imgs_all_[half_length - 1].unsqueeze(0), train_imgs_all_[-1].unsqueeze(0)), dim=0)
+        train_ltrb_target_ = torch.cat((train_ltrb_target_[half_length - 1].unsqueeze(0), train_ltrb_target_[-1].unsqueeze(0)), dim=0)
+
+        test_bb_ = test_anno_[-1].unsqueeze(0)
+        test_bb_first_  = test_anno_[0].unsqueeze(0)
+
+        test_sample_region_ = test_sample_region_[-1].unsqueeze(0)
+        test_anno_ = test_anno_[-1].unsqueeze(0)
+
+        test_label_last_ = data['test_label'][-1].unsqueeze(0)
+
+        test_label_first_ = data['test_label'][0].unsqueeze(0) # second dim is batch
+        test_label_mid = data['test_label'][len(test_anno_) // 2].unsqueeze(0)
+        # test_label_first_ = data['test_label'][0:6] # seq
+        # test_label_mid = None
+
+
+        test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
+
+        test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
+        test_ltrb_target_mid_ = test_ltrb_target[len(test_anno_) // 2].unsqueeze(0)
+        # test_ltrb_target_first_ = test_ltrb_target[0:6] # seq
+        # test_ltrb_target_mid_ = None
+
+        # print("test_labels.shape", test_labels.shape)  # 1 3 B 18 18
+        # input()
+
+        # print("len(train_imgs_all_)",  len(train_imgs_all_))
+        # print("len(test_imgs_all_)",  len(test_imgs_all_))
+        # Print shapes # 3 batch num_train_frames = 5*2 num_test_frames = 5
+
+
+        # print("train_imgs_all_.shape", train_imgs_all_.shape)  # torch.Size([10, 3, 3, 432, 432])
+        # print("test_imgs_all_.shape", test_imgs_all_.shape)  # torch.Size([5, 3, 3, 432, 432])
+
+        # print("train_bb_first_.shape", train_bb_first_.shape)  # torch.Size([2, 3, 4])
+        # print("train_bb_last_.shape", train_bb_last_.shape)  # torch.Size([2, 3, 4])
+        # print("train_label_last.shape", train_label_last.shape)  # torch.Size([2, 3, 27, 27])
+        # print("train_label_first_.shape", train_label_first_.shape)  # torch.Size([2, 3, 27, 27])
+        # print("train_imgs_.shape", train_imgs_.shape)  # torch.Size([2, 3, 3, 432, 432])
+        # print("train_ltrb_target_.shape", train_ltrb_target_.shape)  # torch.Size([2, 3, 4, 27, 27])
+
+        # print("test_bb_.shape", test_bb_.shape)  # torch.Size([1, 3, 4])
+        # print("test_bb_first_.shape", test_bb_first_.shape)  # torch.Size([1, 3, 4])
+
+        # print("test_sample_region_.shape", test_sample_region_.shape)  # torch.Size([1, 3, 1, 27, 27])
+        # print("test_anno_.shape", test_anno_.shape)  # torch.Size([1, 3, 4])
+
+        # print("test_imgs_.shape", test_imgs_.shape)  # torch.Size([1, 3, 3, 432, 432])
+
+
+        # print("test_ltrb_target.shape", test_ltrb_target.shape)  # torch.Size([8, B, 4, 18, 18])
+        # print("test_ltrb_target_first_.shape", test_ltrb_target_first_.shape)  # torch.Size([6, B, 4, 18, 18])
+
+        # print("test_ltrb_target_.shape", test_ltrb_target_.shape)  # torch.Size([1, B, 4, 27, 27])
+        # print("test_ltrb_target_mid_.shape", test_ltrb_target_mid_.shape)  # torch.Size([1, B, 4, 27, 27])
+
+        # print("test_label_.shape", test_label_.shape)  # torch.Size([8, B, 18, 18])
+        # print("test_label_first_.shape", test_label_first_.shape)  # torch.Size([6, B, 18, 18])
+
+
+        # input()
+
+        # Run network
+        # target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
+        #                                      test_imgs=data['test_images'],
+        #                                      train_bb=data['train_anno'],
+        #                                      train_label=data['train_label'],
+        #                                      train_ltrb_target=data['train_ltrb_target'])
+
+        target_scores, bbox_preds, target_scores_PT, bbox_preds_PT = self.net( \
+        # target_scores, bbox_preds, PT_LTRB = self.net( \
+        # target_scores, track_scores, bbox_preds = self.net( \
+                                            train_imgs=train_imgs_,
+                                             test_imgs=test_imgs_,
+                                             train_imgs_all=train_imgs_all_,
+                                             test_imgs_all=test_imgs_all_,
+                                             train_bb=train_bb_last_, 
+                                             train_bb_first = train_bb_first_,
+                                             test_bb_first=test_bb_first_,
+                                             train_label=train_label_last,
+                                             train_label_first=train_label_first_,
+                                             test_label_first=test_label_first_,
+                                             test_label_mid=test_label_mid,
+                                             train_ltrb_target=train_ltrb_target_,
+                                             test_ltrb_target_first=test_ltrb_target_first_,
+                                             test_ltrb_target_mid=test_ltrb_target_mid_,
+                                             )
+
+        # print("test_ltrb_target_.shape", test_ltrb_target_.shape) # torch.Size([1, 3, 4, 27, 27])
+        # print("test_sample_region_.shape", test_sample_region_.shape) # torch.Size([1, 3, 1, 27, 27])
+        # print("bbox_preds.shape", bbox_preds.shape) # torch.Size([1, 3, 4, 27, 27])
+
+        loss_giou, ious = self.objective['giou'](bbox_preds, test_ltrb_target_, test_sample_region_)
+
+        loss_giou_PT, ious_PT = self.objective['giou'](bbox_preds_PT, test_ltrb_target_, test_sample_region_)
+
+        # im_size = bbox_preds.shape[-1]*14
+        # PT_loss_giou = self.compute_iou_PT(test_anno_, PT_LTRB, im_size)
+
+        # print("PT_LTRB", PT_LTRB) #
+        # print("test_ltrb_target_", test_ltrb_target_) #
+        # input()
+
+        # Classification losses for the different optimization iterations
+
+        # print("test_anno_.shape", test_anno_.shape) # torch.Size([1, 3, 4]) # xywz
+        # print("test_anno_", test_anno_) # 
+        # print("test_label_.shape", test_label_.shape) # torch.Size([32, 3, 27, 27])
+        # print("test_label_last_.shape", test_label_last_.shape) # torch.Size([1, 3, 27, 27])
+        # print("target_scores.shape", target_scores.shape) # test_label_.shape torch.Size([1, 3, 27, 27])
+        # input()
+
+        clf_loss_test = self.objective['test_clf'](target_scores, test_label_last_, test_anno_)
+        clf_loss_test_PT = self.objective['test_clf'](target_scores_PT, test_label_last_, test_anno_)
+        # track_clf_loss_test = self.objective['test_clf'](track_scores, test_label_last_, test_anno_)
+
+        loss_ToMP = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
+        # loss_PT = self.loss_weight['giou'] * loss_giou_PT + self.loss_weight['test_clf'] * clf_loss_test_PT
+        loss_PT = self.loss_weight['giouPT'] * loss_giou_PT + self.loss_weight['test_clfPT'] * clf_loss_test_PT
+
+        loss = loss_ToMP + loss_PT
+               
+
+        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
+        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * track_clf_loss_test
+
+        # loss = 0.01 * loss_giou + 0.01 * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
+
+        if torch.isnan(loss):
+            raise ValueError('NaN detected in loss')
+
+        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        ious_pred_centerPT = self.compute_iou_at_max_score_pos(target_scores_PT, data['test_ltrb_target'], bbox_preds)
+        # track_ious_pred_center = self.compute_iou_at_max_score_pos(track_scores, data['test_ltrb_target'], bbox_preds)
+
+        # print("data['test_ltrb_target']", data['test_ltrb_target'])
+        # input()
+
+        stats = {'Loss/total': loss.item(),
+                 'Loss/GIoU': loss_giou.item(),
+                 'Loss/GIoUPT': loss_giou_PT.item(),
+                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
+                #  'Loss/weighted_GIoUPT': self.loss_weight['giou']*loss_giou_PT.item(),
+                 'Loss/weighted_GIoUPT': self.loss_weight['giouPT']*loss_giou_PT.item(),
+                 'Loss/clf_loss_test': clf_loss_test.item(),
+                 'Loss/clf_loss_testPT': clf_loss_test_PT.item(),
+                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
+                #  'Loss/weighted_clf_loss_testPT': self.loss_weight['test_clf']*clf_loss_test_PT.item(),
+                 'Loss/weighted_clf_loss_testPT': self.loss_weight['test_clfPT']*clf_loss_test_PT.item(),
+                 'mIoU': ious.mean().item(),
+                 'mIoUPT': ious_PT.mean().item(),
+                 'maxIoU': ious.max().item(),
+                 'maxIoUPT': ious_PT.max().item(),
+                 'minIoU': ious.min().item(),
+                 'minIoUPT': ious_PT.min().item(),
+                 'mIoU_pred_center': ious_pred_center.mean().item(),
+                 'mIoU_pred_centerPT': clf_loss_test_PT.mean().item(),
+                'Loss/loss_ToMP': loss_ToMP.item(),
+                'Loss/loss_PT': loss_PT.item(),
+                #
+                #  'Loss/PTGIoU': PT_loss_giou.item(),
+                #  'Loss/weighted_PTGIoU': self.loss_weight['giou']*PT_loss_giou.item(),
+                #  'Loss/track_clf_loss_test': track_clf_loss_test.item(),
+                #  'Loss/weighted_track_clf_loss_test': self.loss_weight['test_clf']*track_clf_loss_test.item(),
+                #  'track_ious_pred_center': track_ious_pred_center.mean().item(),           
+                 }
+
+        if ious.max().item() > 0:
+            stats['stdIoU'] = ious[ious>0].std().item()
+
+        return loss, stats
+### PT   
+
+
+
+# GOT-JEPA model predictor pretraining
+class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
+    """Actor for training the DiMP network."""
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {'bb_ce': 1.0}
+        self.loss_weight = loss_weight
+
+        print("ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp")
+
+    def off_diagonal(self, x):
+        n, m = x.shape
+        assert n == m
+        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+    def loss_fn(self, x, xExp, xp, y):
+
+        # x --> cls_filter_context 
+        # xExp -->  cls_filter_context_Exp
+        # xp -->  cls_filter_context_p
+        # y -->  cls_filter_target
+        # yExp -->  cls_filter_target_Exp
+
+        # Print shapes for debugging
+        # print("x.shape before reshape:", x.shape)
+        # print("y.shape before reshape:", y.shape)
+
+        # Reshape x and y from (B, C, 1, 1) to (B, C)
+        x = x.view(x.shape[0], x.shape[1])
+        xExp = xExp.view(xExp.shape[0], xExp.shape[1])
+        xp = xp.view(xp.shape[0], xp.shape[1])
+        y = y.view(y.shape[0], y.shape[1])
+
+        # invariance loss
+        # repr_loss = F.mse_loss(x, y)
+        repr_loss = F.smooth_l1_loss(xp, y)
+
+        # Normalize features
+        x = x - x.mean(dim=0, keepdim=True)
+        xExp = xExp - xExp.mean(dim=0, keepdim=True)
+        xp = xp - xp.mean(dim=0, keepdim=True)
+        y = y - y.mean(dim=0, keepdim=True)
+
+        # print("x.shape after reshape:", x.shape)
+        # print("y.shape after reshape:", y.shape)
+
+        # Ensure x and y have the expected shapes
+        # if x.ndim != 2 or y.ndim != 2:
+        #     raise ValueError("Expected 2D tensors for x and y")
+
+        # if x.shape != y.shape:
+        #     raise ValueError(f"Shape mismatch: x.shape = {x.shape}, y.shape = {y.shape}")
+
+        batch_size = x.shape[0]
+        D = xExp.shape[1]
+
+        # variance loss
+        # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+        # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+        # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+
+        # covariance loss
+        # Use mT instead of T for transposing
+        cov_x = (xExp.mT @ xExp) / (batch_size - 1)
+
+        cov_loss = self.off_diagonal(cov_x).pow_(2).sum().div(D) 
+        # + self.off_diagonal(cov_y).pow_(2).sum().div(D)
+
+        # v_scale = 2.5
+        i_scale = 10000.0
+        c_scale = 400.0
+
+
+        inv_loss = i_scale * repr_loss
+
+        loss = \
+            inv_loss + \
+            c_scale* cov_loss
+
+        return loss, inv_loss
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+        # Run network
+
+        cls_filter_context, breg_filter_context, cls_filter_context_Exp, breg_filter_context_Exp, cls_filter_context_p, breg_filter_context_p, \
+                cls_filter_target, breg_filter_target= \
+                                   self.net(train_imgs=data['train_images'],
+                                            test_imgs=data['test_images'],
+                                            train_bb=data['train_anno'],
+                                            train_label=data['train_label'],
+                                            train_ltrb_target=data['train_ltrb_target'])
+
+        ### Note that loss_X_filter is already added to inv_loss_x
+        loss_cls_filter, inv_loss_c = self.loss_fn(cls_filter_context, cls_filter_context_Exp, cls_filter_context_p, cls_filter_target)
+        loss_breg_filter, inv_loss_b = self.loss_fn(breg_filter_context, breg_filter_context_Exp, breg_filter_context_p, breg_filter_target)
+
+        scale = 1
+
+        total_inv_loss = inv_loss_c + inv_loss_b
+
+        loss = scale * loss_cls_filter + scale * loss_breg_filter
+        # loss = self.loss_weight['giou'] * loss_cls_filter + self.loss_weight['test_clf'] * loss_breg_filter
+
+        diff_loss_invloss = loss - total_inv_loss
+
+        if torch.isnan(loss):
+            raise ValueError('NaN detected in loss')
+
+        stats = {'Loss/total': loss.item(),
+                 'Loss/loss_cls_filter': loss_cls_filter.item(),
+                 'Loss/loss_breg_filter': loss_breg_filter.item(),
+                 'Loss/weighted_loss_cls_filter': scale * loss_cls_filter.item(),
+                 'Loss/weighted_loss_breg_filter': scale * loss_breg_filter.item(),
+                 'Loss/total_inv_loss': scale * total_inv_loss.item(),
+                 'Loss/diff_loss_invloss': scale * diff_loss_invloss.item(),
+                 }
+
+        return loss, stats
+
+
+
+    """Actor for training the DiMP network."""
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {'bb_ce': 1.0}
+        self.loss_weight = loss_weight
+
+        print("ToMPActor_JEPAs1_vicregExpwovc800x_norm2_cexp")
+
+    def off_diagonal(self, x):
+        n, m = x.shape
+        assert n == m
+        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+    def loss_fn(self, x, xExp, xp, y):
+
+        # x --> cls_filter_context 
+        # xExp -->  cls_filter_context_Exp
+        # xp -->  cls_filter_context_p
+        # y -->  cls_filter_target
+        # yExp -->  cls_filter_target_Exp
+
+        # Print shapes for debugging
+        # print("x.shape before reshape:", x.shape)
+        # print("y.shape before reshape:", y.shape)
+
+        # Reshape x and y from (B, C, 1, 1) to (B, C)
+        x = x.view(x.shape[0], x.shape[1])
+        xExp = xExp.view(xExp.shape[0], xExp.shape[1])
+        xp = xp.view(xp.shape[0], xp.shape[1])
+        y = y.view(y.shape[0], y.shape[1])
+
+        # invariance loss
+        # repr_loss = F.mse_loss(x, y)
+        repr_loss = F.smooth_l1_loss(xp, y)
+
+        # Normalize features
+        x = x - x.mean(dim=0, keepdim=True)
+        xExp = xExp - xExp.mean(dim=0, keepdim=True)
+        xp = xp - xp.mean(dim=0, keepdim=True)
+        y = y - y.mean(dim=0, keepdim=True)
+
+        # print("x.shape after reshape:", x.shape)
+        # print("y.shape after reshape:", y.shape)
+
+        # Ensure x and y have the expected shapes
+        # if x.ndim != 2 or y.ndim != 2:
+        #     raise ValueError("Expected 2D tensors for x and y")
+
+        # if x.shape != y.shape:
+        #     raise ValueError(f"Shape mismatch: x.shape = {x.shape}, y.shape = {y.shape}")
+
+        batch_size = x.shape[0]
+        D = xExp.shape[1]
+
+        # variance loss
+        # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+        # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+        # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+
+        # covariance loss
+        # Use mT instead of T for transposing
+        cov_x = (xExp.mT @ xExp) / (batch_size - 1)
+
+        cov_loss = self.off_diagonal(cov_x).pow_(2).sum().div(D) 
+        # + self.off_diagonal(cov_y).pow_(2).sum().div(D)
+
+        # v_scale = 2.5
+        i_scale = 10000.0
+        c_scale = 800.0
+
+
+        inv_loss = i_scale * repr_loss
+
+        loss = \
+            inv_loss + \
+            c_scale* cov_loss
+
+        return loss, inv_loss
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+        # Run network
+
+        cls_filter_context, breg_filter_context, cls_filter_context_Exp, breg_filter_context_Exp, cls_filter_context_p, breg_filter_context_p, \
+                cls_filter_target, breg_filter_target= \
+                                   self.net(train_imgs=data['train_images'],
+                                            test_imgs=data['test_images'],
+                                            train_bb=data['train_anno'],
+                                            train_label=data['train_label'],
+                                            train_ltrb_target=data['train_ltrb_target'])
+
+        ### Note that loss_X_filter is already added to inv_loss_x
+        loss_cls_filter, inv_loss_c = self.loss_fn(cls_filter_context, cls_filter_context_Exp, cls_filter_context_p, cls_filter_target)
+        loss_breg_filter, inv
