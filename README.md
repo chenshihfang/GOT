@@ -1,5 +1,5 @@
 
-This is a Generic Object Tracking Project
+# :unicorn: This is a Generic Object Tracking Project
 
 ## 🔥 Paper Accepted at ICLR 2026!
 
@@ -104,8 +104,10 @@ year      = {2026}
 }
 ```
 
+### :fire: GOT-JEPA has been accepted at TCSVT 2026! 👇
+* [GOT-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture]([https://arxiv.org/abs/2409.18901](https://arxiv.org/abs/2602.14771))
+> A learning framework that enables dynamic model adaptation in adverse environments and fine-grained occlusion perception.
 
-# PiVOT :unicorn:
 
 ### :fire: PiVOT has been accepted at TMM 2025! 👇
 * [Improving Visual Object Tracking through Visual Prompting](https://arxiv.org/abs/2409.18901) | **Code available!**
