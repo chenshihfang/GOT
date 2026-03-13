@@ -1,10 +1,12 @@
-# This is GOT-JEPA code for the model pretraining stage.
+# This is the GOT-JEPA code for the model pretraining stage.
 # We will use the trained model for tracking adaptation in tompnet_JEPAp.py.
 
-# Related files for GOT-JEPA:
-# filter_predictor_JEPA_context.py
-# transformer_JEPA_context.py
-# There is also some related code in heads.py and transformer.py (predictor of the ToMP model).
+# Related files of GOT-JEPA:
+    # filter_predictor_JEPA_context.py
+    # transformer_JEPA_context.py
+    # There is also related code in heads.py and transformer.py (predictor of the ToMP model).
+    # The training actor is in /ltr/actors/tracking.py.
+
 
 import math
 import torch.nn as nn
