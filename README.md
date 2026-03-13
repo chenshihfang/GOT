@@ -104,6 +104,8 @@ year      = {2026}
 }
 ```
 
+##
+
 ### :fire: GOT-JEPA has been accepted at TCSVT 2026! 👇
 * [GOT-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture]([https://arxiv.org/abs/2409.18901](https://arxiv.org/abs/2602.14771))
 > A learning framework that enables dynamic model adaptation in adverse environments and fine-grained occlusion perception.
@@ -112,12 +114,10 @@ year      = {2026}
 ### :fire: PiVOT has been accepted at TMM 2025! 👇
 * [Improving Visual Object Tracking through Visual Prompting](https://arxiv.org/abs/2409.18901) | **Code available!**
 
-## Getting started
-
-Please visit [here](https://github.com/chenshihfang/GOT/tree/c02e55fb2eeea087806e2f0b8dd75d67dfacd635) for PiVOT usage details.
-
 > PiVOT proposes a prompt generation network with the pre-trained foundation model CLIP to automatically generate and refine visual prompts, 
 enabling the transfer of foundation model knowledge for tracking.
+> 
+Please visit [here](https://github.com/chenshihfang/GOT/tree/c02e55fb2eeea087806e2f0b8dd75d67dfacd635) for PiVOT usage details.
 
 ### Raw Results
 The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1E0GUaat7rpBiqlRrfDpEgTXlD7GJEyQE?usp=sharing). 
