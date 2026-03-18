@@ -153,7 +153,9 @@ year      = {2026}
 title={{GOT}-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture}, 
 author={Chen, Shih-Fang and Chen, Jun-Cheng and Jhuo, I-Hong and Lin, Yen-Yu},
 journal={IEEE Transactions on Circuits and Systems for Video Technology}, 
-year={2026}}
+year={2026},
+doi={10.1109/TCSVT.2026.3675005}
+}
 ```
 
 ```
