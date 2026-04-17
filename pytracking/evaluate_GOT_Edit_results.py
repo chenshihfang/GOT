@@ -17,7 +17,9 @@ trackers = []
 
 #####################
 
-trackers.extend(trackerlist('GOT_Edit','GOT_Edit',range(0,1),'GOT_Edit'))
+trackers.extend(trackerlist('GOT_Edit','GOT_Edit',range(0,1),'GOT_Edit')) # raw
+# trackers.extend(trackerlist('tomp','got_edit_378_dino_da3',range(0,1),'got_edit_378_dino_da3')) # exp
+
 
 #####################
 
@@ -28,8 +30,8 @@ plot=False
 attr=False
 
 
-list_=['avist','otb','lasot','nfs']
-
+list_=['avist','otb','lasot','nfs'] # raw
+# list_=['avist'] # exp
 
 if 'nfs' in list_:
     dataset = get_dataset('nfs')

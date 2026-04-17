@@ -22,7 +22,7 @@ import numpy as np
 from PIL import Image
 from pytracking.utils.plotting import draw_figure, overlay_mask
 
-from heatmap import heat_show
+# from heatmap import heat_show
 
 import time
 

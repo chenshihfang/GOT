@@ -11,6 +11,8 @@ from ltr.data.image_loader import imwrite_indexed
 
 PREDICTION_FIELD_NAMES = ['video', 'object', 'frame_num', 'present', 'score', 'xmin', 'xmax', 'ymin', 'ymax']
 
+# print_FPS = True
+print_FPS = False
 
 def _save_tracker_output_oxuva(seq: Sequence, tracker: Tracker, output: dict):
     if not os.path.exists(tracker.results_dir):
@@ -139,7 +141,8 @@ def run_sequence(seq: Sequence, tracker: Tracker, debug=False, visdom_info=None)
     visdom_info = {} if visdom_info is None else visdom_info
 
     if _results_exist() and not debug:
-        print('FPS: {}'.format(-1))
+        if print_FPS:
+            print('FPS: {}'.format(-1))
         return
 
     print('Tracker: {} {} {} ,  Sequence: {}'.format(tracker.name, tracker.parameter_name, tracker.run_id, seq.name))
@@ -182,10 +185,12 @@ def run_sequence(seq: Sequence, tracker: Tracker, debug=False, visdom_info=None)
         num_frames = len(tracking_times)
         
         # Calculate FPS based on the remaining frames
-        print('FPS: {}'.format(num_frames / exec_time))
+        if print_FPS:
+            print('FPS: {}'.format(num_frames / exec_time))
     else:
         # Fallback if the video is too short
-        print(f'FPS: N/A (Sequence shorter than {skip_frames} frames)')
+        if print_FPS:
+            print(f'FPS: N/A (Sequence shorter than {skip_frames} frames)')
 
     if not debug:
         if seq.dataset == 'oxuva':

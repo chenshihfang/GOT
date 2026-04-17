@@ -45,6 +45,13 @@ python evaluate_GOT_Edit_results.py
 For the GOT-10K and TrackingNet results, please refer to the public leaderboards on the official evaluation websites for both challenges under the entry named “Edit” or “GOT-Edit.” The NfS results follow the evaluation protocol described [here](https://github.com/visionml/pytracking/issues/400).
 
 
+### Run the Tracker
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python pytracking/run_experiment.py myexperiments_gotedit GOT_Edit --debug 0 --threads 1
+```  
+
+
 
 ## Prerequisites
 
@@ -59,12 +66,42 @@ Familiarity with the PyTracking codebase will help in understanding the structur
 git clone https://github.com/chenshihfang/GOT.git
 ```  
 
-Ensure that CUDA 11.7 is installed.
+Ensure that CUDA 11.7 is installed.  
+We use PyTorch version 2.0.0.
    
-#### Install dependencies
+#### Install dependencies 
 ```bash
 sudo apt-get install libturbojpeg
 ```  
+
+#### Install Environment
+Run the installation script to install all the dependencies. 
+You need to provide the conda install path and the name for the created conda environment  
+```bash
+bash install_gotedit.sh /your_anaconda3_path/ gotedit
+conda activate gotedit
+```  
+
+#### Install geometry dependencies 
+```bash
+sudo apt-get install libturbojpeg
+```  
+
+
+1. Change to the `Depth-Anything-3` directory:
+
+   ```bash
+   cd /yourpath/GOT/pytracking/ltr/Depth-Anything-3/  
+   python -m pip install -e . --no-deps
+   ```
+    Other geometry backbones can be installed in a similar way.
+
+2. Change back to the `pytracking` directory:
+
+   ```bash
+   cd /home/sfchen94/GOT/pytracking/
+   ```
+
 
 
 #### Set Up the Dataset Environment
@@ -172,4 +209,4 @@ doi={10.1109/TMM.2025.3535323}}
 
 
 ## Contact:
-mail: csf.cs09@nycu.edu.tw
+mail: csf.cs09@nycu.edu.tw or shihfang1207@gmail.com

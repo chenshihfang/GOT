@@ -1,6 +1,6 @@
 pre-commit
 trimesh
-torch>=2
+torch==2.0.0
 torchvision
 einops
 huggingface_hub

@@ -6,7 +6,7 @@ from ltr.models.transformer.position_encoding import PositionEmbeddingSine
 import torch.nn.functional as F
 import torchvision.transforms as T
 import torch.nn.init as init
-from heatmap import heat_show
+# from heatmap import heat_show
 from torch import Tensor
 from functools import partial
 import collections
