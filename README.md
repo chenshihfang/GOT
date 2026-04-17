@@ -36,22 +36,6 @@ Suc: Success Rate AUC
 Pr:  Precision AUC  
 NPr: Normalise Precision AUC  
 
-### Evaluate the Tracking Performance Based on Datasets
-
-```bash
-python evaluate_GOT_Edit_results.py  
-```  
-
-For the GOT-10K and TrackingNet results, please refer to the public leaderboards on the official evaluation websites for both challenges under the entry named “Edit” or “GOT-Edit.” The NfS results follow the evaluation protocol described [here](https://github.com/visionml/pytracking/issues/400).
-
-
-### Run the Tracker
-
-```bash
-CUDA_VISIBLE_DEVICES=0 python pytracking/run_experiment.py myexperiments_gotedit GOT_Edit --debug 0 --threads 1
-```  
-
-
 
 ## Prerequisites
 
@@ -118,6 +102,26 @@ There are two different `local.py` files located in:
 
 Updating the checkpoint path in `ltr/models/backbone/resnet.py` is required.
 This file includes function calls for both the semantic and geometry backbones.
+
+
+
+### Evaluate the Tracking Performance Based on Datasets
+
+```bash
+python evaluate_GOT_Edit_results.py  
+```  
+
+For the GOT-10K and TrackingNet results, please refer to the public leaderboards on the official evaluation websites for both challenges under the entry named “Edit” or “GOT-Edit.” The NfS results follow the evaluation protocol described [here](https://github.com/visionml/pytracking/issues/400).
+
+
+### Run the Tracker
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python pytracking/run_experiment.py myexperiments_gotedit GOT_Edit --debug 0 --threads 1
+```  
+
+
+
 
 ### Training script
 
