@@ -50,8 +50,7 @@ Familiarity with the PyTracking codebase will help in understanding the structur
 git clone https://github.com/chenshihfang/GOT.git
 ```  
 
-Ensure that CUDA 11.7 is installed.  
-We use PyTorch version 2.0.0.
+Ensure that CUDA 11.7 is installed.  We use PyTorch version 2.0.0.
    
 #### Install dependencies 
 ```bash
