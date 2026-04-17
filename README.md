@@ -132,8 +132,6 @@ cd GOT/pytracking/
 CUDA_VISIBLE_DEVICES=0,1,2,3 python ltr/run_training_dsA.py tomp GOT-Edit_DA3_378
 ```
 
-- 💻 Code and pretrained model: More details will be updated soon.
-
 ## Consider citing “GOT-Edit” if this project impresses you
 
 ```
