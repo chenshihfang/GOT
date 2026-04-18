@@ -125,7 +125,7 @@ LR_MILESTONES = [10, 15, 20, 25]
 LR_GAMMA = 0.2
 
 # DP-trained checkpoint (same path used in DP config)
-PRETRAIN_PATH = "/data1/sfchen94/pytrackingcsf/pytracking/checkpoints/ltr/tomp/path_to_tompL_378/pretrain_model.pth.tar" 
+PRETRAIN_PATH = "/path_to_tompL_378/pretrain_model.pth.tar" 
 
 # ===== utils =====
 def _dist_ready():
