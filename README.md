@@ -66,10 +66,6 @@ conda activate gotedit
 ```  
 
 #### Install geometry dependencies 
-```bash
-sudo apt-get install libturbojpeg
-```  
-
 
 1. Change to the `Depth-Anything-3` directory:
 
