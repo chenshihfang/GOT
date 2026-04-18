@@ -145,27 +145,24 @@ year      = {2026}
 ##
 
 ### :fire: GOT-JEPA has been accepted at TCSVT 2026! 👇
-* [GOT-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture]([https://arxiv.org/abs/2409.18901](https://arxiv.org/abs/2602.14771))
+* [GOT-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture](https://arxiv.org/abs/2409.18901](https://arxiv.org/abs/2602.14771)
 > A learning framework that enables dynamic model adaptation in adverse environments and fine-grained occlusion perception.
 
 
+### Raw Results
+The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1fM0MKmMDTL7bmONtmaeVTVuEuf0cVryc?usp=sharing). 
+
 ### :fire: PiVOT has been accepted at TMM 2025! 👇
-* [Improving Visual Object Tracking through Visual Prompting](https://arxiv.org/abs/2409.18901) | **Code available!**
+* [Improving Visual Object Tracking through Visual Prompting](https://arxiv.org/abs/2409.18901)
 
 > PiVOT proposes a prompt generation network with the pre-trained foundation model CLIP to automatically generate and refine visual prompts, 
 enabling the transfer of foundation model knowledge for tracking.
-> 
-Please visit [here](https://github.com/chenshihfang/GOT/tree/c02e55fb2eeea087806e2f0b8dd75d67dfacd635) for PiVOT usage details.
 
 ### Raw Results
 The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1E0GUaat7rpBiqlRrfDpEgTXlD7GJEyQE?usp=sharing). 
 
-Run the installation script to install all the dependencies. 
-You need to provide the conda install path and the name for the created conda environment  
-```bash
-bash install_PiVOT.sh /your_anaconda3_path/ got_pivot
-conda activate got_pivot
-```  
+
+Please visit [here](https://github.com/chenshihfang/GOT/tree/c02e55fb2eeea087806e2f0b8dd75d67dfacd635) for usage details.
 
 
 ## Acknowledgement
