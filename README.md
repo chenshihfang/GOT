@@ -144,6 +144,7 @@ year      = {2026}
 * [GOT-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture](https://arxiv.org/abs/2409.18901](https://arxiv.org/abs/2602.14771)
 > A learning framework that enables dynamic model adaptation in adverse environments and fine-grained occlusion perception.
 
+The current repository includes important code for GOT-JEPA; search this repository for tompnet_JEPA.py, tompnet_JEPAp.py, and tompnet_PT.py, which correspond to GOT-JEPA pretraining, GOT-JEPA fine-tuning, and the OccuSolver variant, respectively; also search for heads.py for related implementation details and actors/tracking.py for loss details; usage instructions will be continuously updated.
 
 ### Raw Results
 The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1fM0MKmMDTL7bmONtmaeVTVuEuf0cVryc?usp=sharing). 
