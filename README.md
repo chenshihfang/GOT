@@ -173,7 +173,7 @@ If you find this repository useful, please consider giving a star :star: and a c
 
 ```
 @inproceedings{gotedit2026iclr,
-title     = {{GOT}-Edit: Geometry-Aware Generic Object Tracking via Online Model Editing},
+title     = {{GOT-E}dit Geometry-Aware Generic Object Tracking via Online Model Editing},
 author    = {Shih-Fang Chen and Jun-Cheng Chen and I-Hong Jhuo and Yen-Yu Lin},
 booktitle = {Proc. Int. Conf. Learn. Represent. (ICLR)},
 year      = {2026}
