@@ -131,7 +131,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python ltr/run_training_dsA.py tomp GOT-Edit_DA3_37
 ##
 
 ### :fire: GOT-JEPA has been accepted at TCSVT 2026! 👇
-* [GOT-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture](https://arxiv.org/abs/2409.18901](https://arxiv.org/abs/2602.14771)
+* [GOT-JEPA: Generic Object Tracking with Model Adaptation and Occlusion Handling using Joint-Embedding Predictive Architecture](https://arxiv.org/abs/2409.18901)
 > A learning framework that enables dynamic model adaptation in adverse environments and fine-grained occlusion perception.
 
 
