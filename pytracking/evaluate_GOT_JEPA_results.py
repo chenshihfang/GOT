@@ -20,10 +20,6 @@ trackers = []
 trackers.extend(trackerlist('GOT_JEPA','GOT_JEPA',range(0,1),'GOT_JEPA')) # raw
 # trackers.extend(trackerlist('tomp','got_jepa_378',range(0,1),'got_jepa_378')) # exp
 
-trackers.extend(trackerlist('tomp','got_jepa_378_gpt',range(0,1),'got_jepa_378_gpt'))
-trackers.extend(trackerlist('tomp','got_jepa_378_cla',range(0,1),'got_jepa_378_cla'))
-
-
 #####################
 
 skm=True
@@ -33,8 +29,8 @@ plot=False
 attr=False
 
 
-# list_=['avist','otb','lasot','nfs'] # raw
-list_=['avist'] # exp
+list_=['avist','otb','lasot','nfs'] # raw
+# list_=['avist'] # exp
 
 if 'nfs' in list_:
     dataset = get_dataset('nfs')
