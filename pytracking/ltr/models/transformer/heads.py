@@ -37,7 +37,7 @@ print("DinoPatch head", DinoPatch)
 
 
 ### Head_JEPAs2 (wP) AlphaEdit Head_AlphaEditv2_robust  # GOT-Edit Online Model Editing
-class Head(nn.Module):
+class Head_AlphaEditv2_robust(nn.Module):
     """
     Context-Aware Perturbation Generation with parallel filter prediction and strong numerical guards.
     Hardened version: gate/JEPA/Wvggt run in fp32, pre/post sanitization, and feature LayerNorm.
@@ -1180,7 +1180,7 @@ class TF_mlp(nn.Module):
 ############################################ ToMP_JEPA_PT
 
 ### PT Head_PT
-class Head_PT(nn.Module):
+class Head(nn.Module):
     """
     """
     def __init__(self, filter_predictor, feature_extractor, classifier, bb_regressor,

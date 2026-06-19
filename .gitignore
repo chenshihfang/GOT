@@ -52,6 +52,7 @@ vot2022-stb
 vot2020-stb
 pytracking/ltr/cotracker2/co_tracker/saved_videos
 pytracking/ltr/cotracker2/co_tracker/assets
+pytracking/ltr/cotracker2/co_tracker/checkpoints/cotracker2.pth
 pytracking/*.png
 pytracking/ltr/vggt/misc/examples
 trace.json

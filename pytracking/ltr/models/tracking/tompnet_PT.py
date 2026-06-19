@@ -325,7 +325,7 @@ class ToMPnet_PT(nn.Module):
             # print("pred_tracks.shape", pred_tracks.shape) # torch.Size([1, 24, 128, 2])
             # print("pred_visibility.shape", pred_visibility.shape) # torch.Size([1, 24, 128])
             # print("torch.sum(pred_visibility[:,-1,:])", torch.sum(pred_visibility[:,-1,:]))
-
+            return pred_tracks, pred_visibility
 
         if self.labels_num == 2:
             # 2 labels
@@ -334,9 +334,9 @@ class ToMPnet_PT(nn.Module):
             # print("test_label_first.shape:", test_label_first.shape) # torch.Size([B, 1, 128, 96, 128])
             # print("test_label_mid.shape:", test_label_mid.shape) # torch.Size([B, 1, 128, 96, 128])
 
-        if eva_time:
-            print("infer_cotracker_model test s")
-            start.record()
+        # if eva_time:
+        #     print("infer_cotracker_model test s")
+        #     start.record()
 
         # print("test_imgs_all.shape", test_imgs_all.shape) 
 
@@ -363,11 +363,11 @@ class ToMPnet_PT(nn.Module):
         # print("CoTracker model inference completed for testing data")
         # input()
 
-        if eva_time:
-            end.record()
-            # Waits for everything to finish running
-            torch.cuda.synchronize()
-            print("infer_cotracker_model test", start.elapsed_time(end))
+        # if eva_time:
+        #     end.record()
+        #     # Waits for everything to finish running
+        #     torch.cuda.synchronize()
+        #     print("infer_cotracker_model test", start.elapsed_time(end))
 
         return pred_tracks_test, pred_visibility_test
 
