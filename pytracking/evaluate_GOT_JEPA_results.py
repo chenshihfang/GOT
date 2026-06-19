@@ -18,7 +18,8 @@ trackers = []
 #####################
 
 trackers.extend(trackerlist('GOT_JEPA','GOT_JEPA',range(0,1),'GOT_JEPA')) # raw
-# trackers.extend(trackerlist('tomp','got_jepa_378',range(0,1),'got_jepa_378')) # exp
+# trackers.extend(trackerlist('tomp','GOT_JEPA_378',range(0,1),'GOT_JEPA_378')) # exp
+
 
 #####################
 
