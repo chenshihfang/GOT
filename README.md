@@ -138,7 +138,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python ltr/run_training_dsA.py tomp GOT-Edit_DA3_37
 ### Raw Results
 The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1fM0MKmMDTL7bmONtmaeVTVuEuf0cVryc?usp=sharing). 
 
-Please visit [here](https://github.com/chenshihfang/GOT/tree/aaa) for usage details.
+Please visit [here](https://github.com/chenshihfang/GOT/tree/84e9324317e4afe62c06b2c51a97563f79730a2e) for usage details.
 
 ### :fire: PiVOT has been accepted at TMM 2025! 👇
 * [Improving Visual Object Tracking through Visual Prompting](https://arxiv.org/abs/2409.18901)
@@ -148,7 +148,6 @@ enabling the transfer of foundation model knowledge for tracking.
 
 ### Raw Results
 The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1E0GUaat7rpBiqlRrfDpEgTXlD7GJEyQE?usp=sharing). 
-
 
 Please visit [here](https://github.com/chenshihfang/GOT/tree/c02e55fb2eeea087806e2f0b8dd75d67dfacd635) for usage details.
 
