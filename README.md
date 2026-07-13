@@ -15,9 +15,8 @@ This paradigm is **generalizable across diverse scenarios and environments** ðŸŒ
 
 ### Main Raw Results and Models
 
-The raw results and models are available for download: [[1]](https://drive.google.com/drive/folders/1l0IuIkSHzVn0e93yWMO-ArQl0vyDRmVn?usp=sharing) 
-[[2]](https://drive.google.com/drive/folders/1vjDNXP6HDorD_8xdWkhaGAokT4aw1jel?usp=sharing) 
-[[3]](https://drive.google.com/drive/folders/1ixG9UVb8ikcrBEi_IvCc8_6mCcbQJ1xm?usp=sharing)
+The raw results and models are available: [[1]](https://drive.google.com/drive/folders/1l0IuIkSHzVn0e93yWMO-ArQl0vyDRmVn?usp=sharing) 
+[[2]](https://drive.google.com/drive/folders/1vjDNXP6HDorD_8xdWkhaGAokT4aw1jel?usp=sharing)
 
 
 | Dataset | Model    |  NPr  |  Suc  |   Pr  |  OP50 |  OP75 |
@@ -139,7 +138,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python ltr/run_training_dsA.py tomp GOT-Edit_DA3_37
 
 
 ### Raw Results
-The raw results can be downloaded from [here](https://drive.google.com/drive/folders/1fM0MKmMDTL7bmONtmaeVTVuEuf0cVryc?usp=sharing). 
+The raw results and models are available [[1]](https://drive.google.com/drive/folders/1fM0MKmMDTL7bmONtmaeVTVuEuf0cVryc?usp=sharing)
+[[2]](https://drive.google.com/drive/folders/1ixG9UVb8ikcrBEi_IvCc8_6mCcbQJ1xm?usp=sharing)
+
 
 Please visit [here](https://github.com/chenshihfang/GOT/tree/84e9324317e4afe62c06b2c51a97563f79730a2e) for usage details.
 
