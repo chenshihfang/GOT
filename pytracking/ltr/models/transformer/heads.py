@@ -194,16 +194,17 @@ class Head(nn.Module):
 
         def _create_null_space_projector(self, k0: torch.Tensor, hparams: dict) -> torch.Tensor:
             """
-            Build P_null from k0.
+            Build a projector onto the semantic low-energy subspace of k0.
+        
+            M2 regularization modes:
+              - fixed:    ZZ^T + alpha I
+              - adaptive: (1/N) ZZ^T + (gamma * mean spectral energy) I
 
-            Supports ablations:
-              - M1: hard threshold vs cumulative energy selection
-              - M2: fixed alpha ridge (sum-cov) vs adaptive ridge (token-avg cov + gamma*mu)
             """
             device = k0.device
             internal_dtype = torch.float32
-
-            # Normalize to (B, C, N)
+        
+            # Convert semantic features to a common (B, C, N) representation.
             if k0.dim() == 5:
                 k0 = k0.reshape(-1, *k0.shape[-3:]).contiguous()
             if k0.dim() == 4:
@@ -214,77 +215,105 @@ class Head(nn.Module):
                 k0_batched = k0.to(internal_dtype).contiguous()
             else:
                 raise ValueError(f"k0 must be 3D/4D/5D, got {tuple(k0.shape)}")
-
+        
             N = k0_batched.shape[2]
             finite_per_sample = torch.isfinite(k0_batched).view(B, -1).all(dim=1)
-
-            # Whitening (kept as-is; not part of the 3 ablation flags)
+        
+            # Per-channel standardization:
+            # remove channel offset/scale bias before spectral-energy analysis.
             mean = k0_batched.mean(dim=2, keepdim=True)
             std = k0_batched.std(dim=2, keepdim=True).clamp_min(1e-4)
             k0w = (k0_batched - mean) / std  # (B,C,N)
-
-            # Raw covariance sum (B,C,C)
+        
+            # Channel-space semantic correlation / energy matrix: ZZ^T.
             cov_sum = torch.bmm(k0w, k0w.transpose(1, 2))
-
+        
             # ---------------- M2: covariance regularization mode ----------------
             use_m2_adaptive = bool(hparams.get("use_m2_adaptive_cov_reg", False))
-
+        
             I = torch.eye(C, device=device, dtype=internal_dtype).expand(B, C, C)
-
+        
             if use_m2_adaptive:
-                # upgraded M2: token-averaged covariance + (gamma*mu)I
-                Ctok = cov_sum / float(max(N, 1))  # (1/N)ZZ^T
-
-                # mu = tr(Ctok)/C  (per batch)
-                tr = torch.diagonal(Ctok, dim1=1, dim2=2).sum(dim=1)  # (B,)
-                mu = tr / float(C)  # (B,)
-
-                gamma = float(hparams.get("gamma", 1e-2))
-                ridge_min = float(hparams.get("ridge_min", 0.0))
-                ridge = (gamma * mu).clamp_min(ridge_min)  # (B,)
-
-                cov_reg = Ctok + ridge.view(B, 1, 1) * I  # (B,C,C)
-
-                # SVD
-                U, S, _ = torch.linalg.svd(cov_reg, full_matrices=False)
-
-                # Floor singular values by ridge (per batch) to avoid tiny values
-                S = torch.maximum(S, ridge.view(B, 1).expand_as(S))
-
+            
+                # Trace-based adaptive ridge:
+                # 1) average over tokens to remove N-dependent matrix scaling;
+                # 2) scale ridge by the current mean spectral energy;
+                # 3) improve conditioning by lifting small eigenvalues,
+                #    without changing the eigendirections.
+            
+                # Convert token-summed ZZ^T to token-averaged channel correlation.
+                Ctok = cov_sum / float(max(N, 1))          # (B,C,C), Ctok = (1/N)ZZ^T
+            
+                # Compute mean spectral energy:
+                # tr(Ctok) = sum of eigenvalues, so mu = mean eigenvalue.
+                tr = torch.diagonal(Ctok, dim1=1, dim2=2).sum(dim=1) # (B,), sum of eigenvalues per sample
+            
+                mu = tr / float(C)                         # (B,), mean spectral energy
+            
+                # gamma controls ridge strength relative to the current spectral scale.
+                gamma = float(hparams.get("gamma", 1e-2)) # scalar, relative ridge coefficient
+            
+                # Optional absolute lower bound for the adaptive ridge.
+                ridge_min = float(hparams.get("ridge_min", 0.0)) # scalar, minimum allowed ridge value
+            
+                # Adaptive ridge = fixed fraction of the mean spectral energy.
+                # Larger spectral scale -> proportionally larger ridge.
+                ridge = (gamma * mu).clamp_min(ridge_min) # (B,), per-sample ridge strength
+            
+                # Add ridge to every channel-space eigenvalue:
+                # lambda_i -> lambda_i + ridge.
+                # This improves conditioning but does not change eigendirections/eigengaps.
+                cov_reg = (Ctok + ridge.view(B, 1, 1) * I) # (B,C,C), regularized correlation matrix
+            
+                # Decompose the regularized channel-space matrix.
+                # U: semantic channel directions; S: corresponding regularized energies.
+                U, S, _ = torch.linalg.svd(cov_reg, full_matrices=False) # U:(B,C,C), S:(B,C)
+            
+                # Defensive floating-point guard.
+                # Theoretically S >= ridge already because cov_reg = Ctok + ridge*I.
+                S = torch.maximum(S, ridge.view(B, 1).expand_as(S)) # (B,C), enforce theoretical numerical floor
+                
             else:
-                # original M2: covariance sum + fixed alpha*I
+                # Fixed ridge on the token-summed correlation matrix.
                 alpha = float(hparams.get("alpha", 1e-2))
                 cov_reg = cov_sum + alpha * I
-
+        
                 U, S, _ = torch.linalg.svd(cov_reg, full_matrices=False)
+        
+                # Defensive numerical clamp; theoretically S >= alpha already.
                 S = S.clamp_min(alpha)
-
-
-            # normalized energies (sum to 1)
+        
+            # Relative energy of each regularized spectral direction.
             energy = S / (S.sum(dim=1, keepdim=True) + 1e-12)  # (B,C)
-
-            # original M1: hard threshold on normalized energy
+        
+            # Select directions with low individual semantic energy.
+            # This is a per-direction threshold, not cumulative-energy selection.
             e_thr = float(hparams.get("energy_threshold", 1e-2))
             null_mask = (energy <= e_thr)  # (B,C) bool
-
-
-            # Ensure at least one null direction per sample
+        
+            # Fallback: retain the minimum-energy direction if none passes the threshold.
+            # With the current C / threshold setting this branch is normally unreachable.
             nothing = (~null_mask).all(dim=1)
             if nothing.any():
                 idx_min = torch.argmin(S, dim=1)
                 null_mask[nothing, :] = False
                 null_mask[nothing, idx_min[nothing]] = True
-
-            # Build projector: U diag(null_mask) U^T
+        
+            # Orthogonal projector onto the selected low-energy subspace:
+            # P = U diag(mask) U^T.
             Msel = torch.diag_embed(null_mask.to(U.dtype))  # (B,C,C)
             P = torch.bmm(U, torch.bmm(Msel, U.transpose(1, 2)))
+        
+            # Remove small floating-point asymmetry.
             P = 0.5 * (P + P.transpose(1, 2))
-
-            # Fallback: neutralize if input had non-finite values
+        
+            # Disable model editing for invalid samples.
+            # Active callers normally filter non-finite inputs before reaching this point.
             if (~finite_per_sample).any():
                 P[~finite_per_sample] = 0.0
-
+        
             return P.to(device=device, dtype=internal_dtype)
+            
 
         def refine_weights_with_alphaedit(
             self,
