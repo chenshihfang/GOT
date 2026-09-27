@@ -1,6 +1,5 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 """Backbone loaders and feature extractors.
 
 Reading order: GOT-Edit geometry, GOT-JEPA point tracking, ToMP/DiMP and
@@ -58,8 +57,6 @@ except:
 # -----------------------------------------------------------------------------
 # GOT-Edit: geometry backbone loaders
 # -----------------------------------------------------------------------------
-
-
 def dinov2_DA3(checkpoint_path="depth-anything/da3-large", device="cuda"):
     """
     Load Depth Anything 3 base model from Hugging Face hub.
@@ -167,8 +164,6 @@ def dinov2_VGGT(checkpoint_path="facebook/VGGT-1B", device="cuda"):
 # -----------------------------------------------------------------------------
 # GOT-JEPA: point tracking backbone
 # -----------------------------------------------------------------------------
-
-
 def cotracker_predictor(
     checkpoint_path="ltr/cotracker2/co_tracker/checkpoints/cotracker2.pth", device="cuda"
 ):
@@ -179,8 +174,6 @@ def cotracker_predictor(
 # -----------------------------------------------------------------------------
 # ToMP/DiMP and shared semantic backbones
 # -----------------------------------------------------------------------------
-
-
 def dinov2(model_name="dinov2_vitl14"):
 
     dinov2 = torch.hub.load("facebookresearch/dinov2", model_name)
@@ -206,7 +199,6 @@ def resnet50(output_layers=None, pretrained=False, **kwargs):
 
     # model = torchvision.models.resnet50() # note: this could be any model
     # model = torch.compile(model) # <- magic happens!
-
     return model
 
 
@@ -528,8 +520,6 @@ def resnet101(output_layers=None, pretrained=False, **kwargs):
 # -----------------------------------------------------------------------------
 # Legacy and experimental backbones
 # -----------------------------------------------------------------------------
-
-
 def VIT(SEARCH_SIZE, ENCODER_TYPE, ENCODER_PRETRAIN_TYPE, train_encoder):
 
     encoder = build_vit_encoder(SEARCH_SIZE, ENCODER_TYPE, ENCODER_PRETRAIN_TYPE, train_encoder)
@@ -583,7 +573,6 @@ def dinov3_(dino_name):
         raise FileNotFoundError(f"Model weights not found at: {WEIGHT_PATH}")
 
     # --- MODIFICATION STARTS HERE ---
-
     # 1. Use torch.hub.load to build the model architecture ONLY.
     #    Do NOT pass the 'weights' argument here directly.
     print(f"Loading {dino_name} architecture from local hub.")
@@ -602,7 +591,6 @@ def dinov3_(dino_name):
     model.load_state_dict(state_dict)  # Apply the loaded weights to the model
 
     # --- MODIFICATION ENDS HERE ---
-
     model.to("cuda")  # Move model to GPU after loading weights
     model.eval()
 
@@ -627,13 +615,11 @@ def radio():
     model_version = "radio_v2.1"
     # model_version = "radio_v2"
     # model_version = "e-radio_v2"
-
     model = torch.hub.load(
         "NVlabs/RADIO", "radio_model", version=model_version, progress=True, skip_validation=True
     )
 
     # model.cuda().eval()
-
     return model
 
 
@@ -718,7 +704,6 @@ def dinov2_Depth(backbone_model, backbone_scale):
     model.cuda()
 
     # output = model.decode_head(input_tensor)
-
     return model
 
 
