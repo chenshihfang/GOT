@@ -1,18 +1,14 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 # Guidance
-
 # This file contains the main training call for GOT-Edit training.
 # The default path uses Depth Anything 3 as geometry. To switch to VGGT or StreamVGGT:
 # 1. Enable all comments related to `vggtDPTfeatMlp` and `vggtDPTfeatMlp_head`, then comment out `DA3_bkMlp`.
 # 2. Select `self.use_geo_type` and `backbone_net_VGGT` for the intended type.
-
 # Resolution
 # The default resolution uses 378 × 378 (patch 27).
 # To change to 252 × 252 (patch 18), modify `DinoPatch` to 18 in `heads.py` and in the evaluation code `tomp.py`.
 # Also change `bkMlp` to `bkMlpMOEv2`.
-
 """GOT-Edit network: semantic features, geometry features and online editing.
 
 Training: GOT-Edit_DA3_378.py, GOT-Edit_VGGT_378.py and
@@ -51,7 +47,6 @@ from PIL import Image
 from pytracking.utils.plotting import draw_figure, overlay_mask
 
 # from heatmap import heat_show
-
 import time
 
 import ltr.data.processing_utils as prutils
@@ -137,12 +132,10 @@ class ToMPnet(nn.Module):
 
         self.bkMlp = bkMlp
         # self.bkMlpMOEv2 = bkMlpMOEv2
-
         self.feature_extractor_VGGT = feature_extractor_VGGT
 
         # self.vggtDPTfeatMlp = vggtDPTfeatMlp  # enable when VGGT/StreamVGGT
         # self.vggtDPTfeatMlp_head = vggtDPTfeatMlp_head  # enable when VGGT/StreamVGGT
-
         self.DA3_bkMlp = DA3_bkMlp  # enable when DA3
 
         self.feature_extractor = feature_extractor
@@ -178,7 +171,6 @@ class ToMPnet(nn.Module):
 
     # extract_dino_features_spatial_intermediate_layers_bkMlp
     # Semantic feature extraction
-
     def extract_dino_features_spatial_intermediate_layers(self, images, ran_idx=None):
         """Extract and adapt intermediate semantic backbone features.
 
@@ -297,7 +289,6 @@ class ToMPnet(nn.Module):
                     raise ValueError(f"unsupported backbone: {backbone}")
 
         # fusion returns [B, C, H, W] (same H,W as first map)
-
         with torch.cuda.amp.autocast(enabled=False):
             total_features = self.bkMlpMOEv2(inter_feats)
 
@@ -306,7 +297,6 @@ class ToMPnet(nn.Module):
         return total_features
 
     # GOT-Edit geometry feature extraction
-
     def extract_da3_dpt_features_intermediate_cat(self, images, ran_idx=None):
         # images: [B, S, 3, H, W]
         """Extract DA3 geometry features and convert them to frame-first layout.
@@ -399,9 +389,7 @@ class ToMPnet(nn.Module):
             vggt_dpt_feats = [f0, fl1]
 
         # with torch.cuda.amp.autocast(enabled=False):
-
         # Cast each tensor inside the list to fp32 # remove when infer # self.bf16_vggtonly = True
-
         if torch.is_grad_enabled():  # auto2 (remove these)
             if self.bf16_vggtonly and not self.auto_cast:
                 vggt_dpt_feats = [t.to(torch.float32) for t in vggt_dpt_feats]
@@ -624,7 +612,6 @@ class ToMPnet(nn.Module):
         return reshaped_imgs
 
     # Training forward path
-
     def forward(self, train_imgs, test_imgs, train_bb, *args, **kwargs):
         """Run the training path; inference calls the feature methods directly.
 
@@ -644,6 +631,7 @@ class ToMPnet(nn.Module):
         train_ims_resize = self.resize_5d_tensor(train_imgs, size=DinoPatch * 14)
         test_ims_resize = self.resize_5d_tensor(test_imgs, size=DinoPatch * 14)
 
+        # Semantic: extract DINO features for training and test frames.
         train_ims_reshape = train_ims_resize.reshape(-1, *train_ims_resize.shape[-3:])
         test_ims_reshape = test_ims_resize.reshape(-1, *test_ims_resize.shape[-3:])
 
@@ -654,6 +642,7 @@ class ToMPnet(nn.Module):
             test_ims_reshape, None
         )
 
+        # Geometry: arrange frames for DA3/VGGT/StreamVGGT feature extraction.
         test_ims_resize_permute = test_ims_resize.permute(1, 0, 2, 3, 4)
 
         train_ims_resize_permute = train_ims_resize.permute(1, 0, 2, 3, 4)
@@ -675,17 +664,14 @@ class ToMPnet(nn.Module):
         # Get the first slice along dimension 0 (index 0)
         # Using [0:1] keeps the dimension, resulting in shape [1, B, C, H, W]
         # test_vggt_dpt_feats_head = vggt_dpt_feats_[0:1]
-
         # Get the remaining slices along dimension 0 (indices 1 and 2)
         # Using [1:] slices from index 1 to the end
         # train_vggt_dpt_feats_head = vggt_dpt_feats_[1:]
-
         # --- Step 2: Split ---
         train_vggt_dpt_feats_head = vggt_dpt_feats_[: train_imgs.shape[0]]
         test_vggt_dpt_feats_head = vggt_dpt_feats_[-1:]
 
         # --- Verification ---
-
         test_vggt_dpt_feats_head = test_vggt_dpt_feats_head.reshape(
             -1, *test_vggt_dpt_feats_head.shape[-3:]
         )
@@ -693,6 +679,7 @@ class ToMPnet(nn.Module):
             -1, *train_vggt_dpt_feats_head.shape[-3:]
         )
 
+        # Semantic + Geometry: adapt geometry features for the tracking head.
         if self.use_geo_type == "VGGT" or self.use_geo_type == "StreamVGGT":
             test_vggt_dpt_feats_head_ = self.vggtDPTfeatMlp_head(
                 test_vggt_dpt_feats_head.contiguous()
@@ -723,7 +710,6 @@ class ToMPnet(nn.Module):
         return test_scores, bbox_preds
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         feat = OrderedDict({l: backbone_feat[l] for l in self.head_layer})
         if len(self.head_layer) == 1:
@@ -787,7 +773,6 @@ def tompnet50(
 
     bkMlp = heads.bkMlp()
     # bkMlpMOEv2 = heads.bkMlpMOEv2()
-
     JEPA_predictor_cls = heads.JEPA_predictor_cls()
     JEPA_predictor_breg = heads.JEPA_predictor_breg()
 
@@ -795,7 +780,6 @@ def tompnet50(
 
     # vggtDPTfeatMlp = heads.vggtDPTfeatMlp()  # enable when VGGT/StreamVGGT
     # vggtDPTfeatMlp_head = heads.vggtDPTfeatMlp_head()  # enable when VGGT/StreamVGGT
-
     DA3_bkMlp = heads.DA3_bkMlp()  # enable when DA3
 
     DiNO_VGGT_Gate = heads.DiNO_VGGT_Gate()
@@ -826,7 +810,6 @@ def tompnet50(
     #                                                             num_blocks=head_feat_blocks, l2norm=head_feat_norm,
     #                                                             final_conv=final_conv, norm_scale=norm_scale,
     #                                                             out_dim=out_feature_dim)
-
     # Build transformer with the toggle threaded in
     transformer = trans.Transformer(
         d_model=out_feature_dim,

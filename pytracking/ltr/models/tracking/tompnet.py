@@ -1,6 +1,5 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 """ToMP network construction and shared DINO feature extraction.
 
 Training images use (T, B, 3, H, W) and target boxes use (T, B, 4).
@@ -38,7 +37,6 @@ from PIL import Image
 from pytracking.utils.plotting import draw_figure, overlay_mask
 
 # from heatmap import heat_show
-
 import ltr.data.processing_utils as prutils
 
 # DinoPatch = 16
@@ -104,7 +102,6 @@ class ToMPnet(nn.Module):
         self.show = 0
 
     # Semantic feature extraction
-
     def extract_dino_features_spatial_intermediate_layers(self, images, ran_idx=None):
         """Extract and adapt intermediate semantic backbone features.
 
@@ -176,7 +173,6 @@ class ToMPnet(nn.Module):
         return reshaped_imgs
 
     # Training forward path
-
     def forward(self, train_imgs, test_imgs, train_bb, *args, **kwargs):
         """Run the training path; inference calls the feature methods directly.
 
@@ -218,7 +214,6 @@ class ToMPnet(nn.Module):
         return test_scores, bbox_preds
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         feat = OrderedDict({l: backbone_feat[l] for l in self.head_layer})
         if len(self.head_layer) == 1:
@@ -301,7 +296,6 @@ def tompnet50(
     #                                                           num_blocks=head_feat_blocks, l2norm=head_feat_norm,
     #                                                           final_conv=final_conv, norm_scale=norm_scale,
     #                                                           out_dim=out_feature_dim)
-
     transformer = trans.Transformer(
         d_model=out_feature_dim,
         nhead=nhead,

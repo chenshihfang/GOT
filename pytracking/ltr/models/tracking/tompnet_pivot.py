@@ -1,6 +1,5 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 """Legacy PiVOT networks and visual prompting components.
 
 The ToMP constructor is followed by the CLIP/prompting variant. Both original
@@ -70,8 +69,6 @@ if use_clip:
 # -----------------------------------------------------------------------------
 # ToMP network and constructor
 # -----------------------------------------------------------------------------
-
-
 class ToMPnet(nn.Module):
     """The ToMP network.
     args:
@@ -220,7 +217,6 @@ class ToMPnet(nn.Module):
         return imm_crop_resize_sqz
 
     # Training forward path
-
     def forward(self, train_imgs, test_imgs, train_bb, *args, **kwargs):
         """Runs the ToMP network the way it is applied during training.
         The forward function is ONLY used for training. Call the individual functions during tracking.
@@ -252,7 +248,6 @@ class ToMPnet(nn.Module):
         return test_scores, bbox_preds
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         feat = OrderedDict({l: backbone_feat[l] for l in self.head_layer})
         if len(self.head_layer) == 1:
@@ -350,8 +345,6 @@ def tompnet50(
 # -----------------------------------------------------------------------------
 # Legacy PiVOT / CLIP prompting network and constructor
 # -----------------------------------------------------------------------------
-
-
 # ToMPnet_CLIP ToMPnet
 class ToMPnet_CLIP(nn.Module):
     """The ToMP network.
@@ -378,18 +371,22 @@ class ToMPnet_CLIP(nn.Module):
         self.head_layer = [head_layer] if isinstance(head_layer, str) else head_layer
         self.output_layers = sorted(list(set(self.head_layer)))
 
+        # DINO: semantic backbone adapter and normalization settings.
         self.bkMlp = bkMlp
         self.normMethod = 2
         print("self.normMethod", self.normMethod)
 
+        # SRopt: feature fusion and shrink modules.
         self.test_fuse = test_fuse
         self.test_fuse_head = test_fuse_head
         self.test_shrink = test_shrink
         self.hint_test_feat_head = hint_test_feat_head
 
+        # Training: configure feature shrinking.
         self.wo_shr = 1
         print("self.wo_shr", self.wo_shr)
 
+        # Inference and visualization settings.
         self.infer = 1
         self.show = 0
         print("self.infer", self.infer)
@@ -405,8 +402,10 @@ class ToMPnet_CLIP(nn.Module):
 
             self.clip_float = 1  # what Interacting_with_CLIP.ipynb do
 
+            # CLIP: initial-mask and candidate-region settings.
             self.hisclip_use_fir_only = 0
 
+            # Initial mask: optionally use only the first frame.
             self.ini_mask_use_fir_only = 0
 
             self.prune_highlight_center_only = 1
@@ -434,6 +433,7 @@ class ToMPnet_CLIP(nn.Module):
             if use_open_clip:
                 print("pretrained_data", pretrained_data)
 
+        # Test/debug visualization switches.
         self.show_test_train_in = 0
         self.show_pretrain = 0
         self.show_train_input = 0
@@ -443,6 +443,7 @@ class ToMPnet_CLIP(nn.Module):
             self.show_pretrain = 1
             self.show_train_input = 0
 
+        # CLIP: crop and background-feature settings.
         self.dclip_crop = 1  # crop
 
         self.bg_info = 0  # crop with bg only for train pipeline
@@ -545,6 +546,7 @@ class ToMPnet_CLIP(nn.Module):
             [torch.unsqueeze(dclip_train_imgs_, 0) for dclip_train_imgs_ in crop_ims], 0
         )
 
+        # CLIP: encode the candidate crops as a parallel batch.
         crop_clip_feat = self.CLIP_classical_model(crop_ims_tensor)
 
         return crop_clip_feat, crop_ims
@@ -616,6 +618,7 @@ class ToMPnet_CLIP(nn.Module):
 
                 w, h = pre_boxwh_list[idx]
 
+                # High-prune variant: move this coordinate block outside the current condition.
                 y_idx = sms_arg_coor[0].item()
                 x_idx = sms_arg_coor[1].item()
 
@@ -653,6 +656,7 @@ class ToMPnet_CLIP(nn.Module):
 
             prob_map = prob_map.expand(-1, 3, -1, -1)  # 3 1 288 288 -> # 3 3 288 288
 
+            # Mask visualization: overlay the prompt probability map on the resized image.
             test_imgs_ = self.resize_5d_tensor(test_imgs, size=352)
             mask_test_imgs = test_imgs_ + prob_map
 
@@ -767,6 +771,7 @@ class ToMPnet_CLIP(nn.Module):
     def test_feat_2_prob_map(self, test_feat_enc, *args, **kwargs):
 
         # w shrink
+        # test_shrink: shrink encoded test features when wo_shr is disabled.
         if not self.wo_shr:
             test_feat_enc = self.test_shrink(test_feat_enc)
 
@@ -872,7 +877,6 @@ class ToMPnet_CLIP(nn.Module):
         return similarity
 
     # Training forward path
-
     def forward(self, train_imgs, test_imgs, train_bb, *args, **kwargs):
         """Runs the ToMP network the way it is applied during training.
         The forward function is ONLY used for training. Call the individual functions during tracking.
@@ -932,8 +936,10 @@ class ToMPnet_CLIP(nn.Module):
         train_feat_head = self.extract_dino_features_spatial(train_ims_reshape, mode=1)
         test_feat_head = self.extract_dino_features_spatial(test_ims_reshape, mode=1)
 
+        # SRopt input features: select cropped training features or the original features.
         if self.train_crop_feat:
 
+            # Without filter_initializer: extract DINO features directly from training images.
             dclip_train_imgs = train_imgs.reshape(-1, *dclip_train_imgs.shape[-3:])
             dclip_train_imgs = self.resize_5d_tensor(dclip_train_imgs, size=378)
 
@@ -949,11 +955,12 @@ class ToMPnet_CLIP(nn.Module):
             test_imgs, [opt_train_feat_head, opt_test_feat_head], dclip_train_imgs
         )
 
+        # Training/test fusion: place the prompt map on the test-feature device.
         prob_map_small = prob_map_small.to(test_feat_head.device)
         prob_map_small_swp = prob_map_small.permute(1, 0, 2, 3)
 
         # forward part
-
+        # hint_test_feat_head: inject the expanded prompt map into test features.
         prob_map_exp = prob_map_small_swp.expand(-1, test_feat_head.shape[1], -1, -1)
         test_feat_head = self.hint_test_feat_head(test_feat_head, prob_map_exp)
 
@@ -965,7 +972,6 @@ class ToMPnet_CLIP(nn.Module):
         return test_scores, bbox_preds, prob_map_small  # , hint_bbox_preds
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         feat = OrderedDict({l: backbone_feat[l] for l in self.head_layer})
         if len(self.head_layer) == 1:
@@ -1011,7 +1017,6 @@ def tompnet50_CLIP(
 ):
 
     # Backbone
-
     backbone_net = backbones.dinov2("dinov2_vitl14")
 
     bkMlp = heads.bkMlp()
@@ -1059,6 +1064,7 @@ def tompnet50_CLIP(
         bb_regressor=bb_regressor,
     )
 
+    # SRopt: construct the feature-fusion, shrink and prompt-injection modules.
     test_fuse = heads.test_fuse()
 
     test_fuse_head = heads.test_fuse_head()

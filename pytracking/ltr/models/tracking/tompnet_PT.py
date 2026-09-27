@@ -1,8 +1,6 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 # We call CoTracker in /ltr/models/backbone/resnet.py
-
 """GOT-JEPA point tracking extension using CoTracker features.
 
 Side networks and point embeddings supply the occlusion-aware tracking path.
@@ -38,12 +36,9 @@ from PIL import Image
 from pytracking.utils.plotting import draw_figure, overlay_mask
 
 # from heatmap import heat_show
-
 import time
 
 # t0 = time.time()
-
-
 import ltr.data.processing_utils as prutils
 
 try:
@@ -69,8 +64,6 @@ print("backbone tompnet_PT", backbone)
 
 # infer = True
 # infer = False
-
-
 # 1. Import depth
 import math
 import matplotlib
@@ -134,7 +127,6 @@ class ToMPnet_PT(nn.Module):
 
         self.show = 0
         # self.show = 1
-
         self.grid_size = 100  # No Use
 
         # self.point_num = 64
@@ -290,7 +282,6 @@ class ToMPnet_PT(nn.Module):
                 # Normalize the image, applying mean and std across the correct dimensions
                 tmp_ts_im = (tmp_ts_im * std) + mean
                 # tmp_ts_im = (tmp_ts_im -mean )/std
-
             if RGB2BGR:
                 # Permute the color channels from RGB to BGR
                 tmp_ts_im = tmp_ts_im[
@@ -322,9 +313,9 @@ class ToMPnet_PT(nn.Module):
         ):
 
             # queries = prepare_queries(bb_first, device) # Expecting [B, 128, 3]
-
             queries = prepare_queries(bb_first, bb_mid, device)  # Expecting [B, 128, 3]
 
+            # Visible-point queries: reserve half the query slots (64 when there are 128).
             if filtered_points != None:
                 half_num = (
                     queries.shape[1] // 2
@@ -334,9 +325,9 @@ class ToMPnet_PT(nn.Module):
                 # Replace only up to num_filtered points in the first half of queries
                 queries[:, :num_filtered, :] = filtered_points[:, :num_filtered, :]
 
+            # Batch-first CoTracker input: move the batch dimension before the frame dimension.
             imgs_all = imgs_all.permute(1, 0, 2, 3, 4)
             # imgs_all = imgs_all.squeeze(1).unsqueeze(0)
-
             grid_size = self.grid_size
 
             imgs_all_unnorm = tensor_unnorm(imgs_all, 1, 0)
@@ -360,12 +351,9 @@ class ToMPnet_PT(nn.Module):
             test_label_mid = self.PTlabelEmbeddingNetwork(test_label_mid).unsqueeze(1)
 
         # if eva_time:
-
         #     start.record()
-
         test_imgs_all_ = test_imgs_all.permute(1, 0, 2, 3, 4)
         # Copy the first image in each sequence to the second and third positions
-
         # if self.PTcopyF:
         if self.training or test_label_mid.shape[0] >= 4:
             test_imgs_all_[:, 1, :, :, :] = test_imgs_all_[:, 0, :, :, :]
@@ -388,7 +376,6 @@ class ToMPnet_PT(nn.Module):
         #     end.record()
         #     # Waits for everything to finish running
         #     torch.cuda.synchronize()
-
         return pred_tracks_test, pred_visibility_test
 
     def PT_prompt(self, test_tracks_split):
@@ -398,7 +385,6 @@ class ToMPnet_PT(nn.Module):
         return test_tracks_transformed
 
     # Semantic feature extraction
-
     def extract_dino_features_spatial_intermediate_layers(self, images, ran_idx=None):
         """Extract and adapt intermediate semantic backbone features.
 
@@ -471,7 +457,6 @@ class ToMPnet_PT(nn.Module):
         return reshaped_imgs
 
     # Training forward path
-
     def forward(
         self,
         train_imgs,
@@ -500,7 +485,6 @@ class ToMPnet_PT(nn.Module):
         assert train_imgs.dim() == 5 and test_imgs.dim() == 5, "Expect 5 dimensional inputs"
 
         # Extract backbone features
-
         train_ims = train_imgs.reshape(-1, *train_imgs.shape[-3:])
         test_ims = test_imgs.reshape(-1, *test_imgs.shape[-3:])
 
@@ -547,7 +531,6 @@ class ToMPnet_PT(nn.Module):
         return target_scores, bbox_preds, target_scores_PT, bbox_preds_PT
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         feat = OrderedDict({l: backbone_feat[l] for l in self.head_layer})
         if len(self.head_layer) == 1:
@@ -647,7 +630,6 @@ def tompnet50_PT(
     #                                                           num_blocks=head_feat_blocks, l2norm=head_feat_norm,
     #                                                           final_conv=final_conv, norm_scale=norm_scale,
     #                                                           out_dim=out_feature_dim)
-
     transformer = trans.Transformer(
         d_model=out_feature_dim,
         nhead=nhead,

@@ -1,16 +1,12 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 # This is the GOT-JEPA code for the model pretraining stage.
 # We will use the trained model for tracking adaptation in tompnet_JEPAp.py.
-
 # Related files of GOT-JEPA:
 # filter_predictor_JEPA_context.py
 # transformer_JEPA_context.py
 # There is also related code in heads.py and transformer.py (predictor of the ToMP model).
 # The training actor is in /ltr/actors/tracking.py.
-
-
 """GOT-JEPA pretraining network with context and frozen target branches.
 
 The context branch consumes relocated features and predicts target filters;
@@ -50,7 +46,6 @@ from PIL import Image
 from pytracking.utils.plotting import draw_figure, overlay_mask
 
 # from heatmap import heat_show
-
 import ltr.data.processing_utils as prutils
 
 
@@ -127,14 +122,12 @@ class ToMPnet(nn.Module):
 
         self.feature_extractor = feature_extractor
         # self.head = head
-
         self.head_layer = [head_layer] if isinstance(head_layer, str) else head_layer
         self.output_layers = sorted(list(set(self.head_layer)))
 
         self.show = 0
 
     # Semantic feature extraction
-
     def extract_dino_features_spatial_intermediate_layers(self, images, ran_idx=None):
         """Extract and adapt intermediate semantic backbone features.
 
@@ -246,7 +239,6 @@ class ToMPnet(nn.Module):
         return relocated_tensor
 
     # Training forward path
-
     def forward(self, train_imgs, test_imgs, train_bb, *args, **kwargs):
         """Run context/target filter prediction for JEPA pretraining.
 
@@ -284,7 +276,6 @@ class ToMPnet(nn.Module):
         # JEPA
         masked_test_feat_head = self.apply_random_relocation_mask(test_feat_head)
         # JEPA
-
         # Run head module
         with torch.no_grad():
             cls_filter_target, breg_filter_target = self.Head_JEPA_target(
@@ -299,6 +290,7 @@ class ToMPnet(nn.Module):
         cls_filter_context_p = self.JEPA_predictor_cls(cls_filter_context)
         breg_filter_context_p = self.JEPA_predictor_breg(breg_filter_context)
 
+        # VICReg_Exp: expand context filters for covariance regularization.
         cls_filter_context_Exp = self.JEPA_VICReg_Exp_c(cls_filter_context)
         breg_filter_context_Exp = self.JEPA_VICReg_Exp_r(breg_filter_context)
 
@@ -314,7 +306,6 @@ class ToMPnet(nn.Module):
         )
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         feat = OrderedDict({l: backbone_feat[l] for l in self.head_layer})
         if len(self.head_layer) == 1:
@@ -404,7 +395,6 @@ def tompnet50(
     #                                                             num_blocks=head_feat_blocks, l2norm=head_feat_norm,
     #                                                             final_conv=final_conv, norm_scale=norm_scale,
     #                                                             out_dim=out_feature_dim)
-
     transformer = trans.Transformer(
         d_model=out_feature_dim,
         nhead=nhead,
@@ -421,6 +411,7 @@ def tompnet50(
 
     bb_regressor = heads.DenseBoxRegressor(num_channels=out_feature_dim)
 
+    # JEPA: build the context Transformer, filter predictor and head.
     transformerJC = transJC.Transformer(
         d_model=out_feature_dim,
         nhead=nhead,

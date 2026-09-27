@@ -1,6 +1,5 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 """GOT-JEPA adaptation network for finetuning and tracking.
 
 DINO intermediate features feed the tracking head and JEPA filter predictors.
@@ -33,7 +32,6 @@ from PIL import Image
 from pytracking.utils.plotting import draw_figure, overlay_mask
 
 # from heatmap import heat_show
-
 import time
 
 import ltr.data.processing_utils as prutils
@@ -131,7 +129,6 @@ class ToMPnet(nn.Module):
         print("self.dtype", self.dtype)
 
     # Semantic feature extraction
-
     def extract_dino_features_spatial_intermediate_layers(self, images, ran_idx=None):
         """Extract and adapt intermediate semantic backbone features.
 
@@ -234,7 +231,6 @@ class ToMPnet(nn.Module):
         return reshaped_imgs
 
     # Training forward path
-
     def forward(self, train_imgs, test_imgs, train_bb, *args, **kwargs):
         """Run the training path; inference calls the feature methods directly.
 
@@ -281,7 +277,6 @@ class ToMPnet(nn.Module):
         return test_scores, bbox_preds
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         feat = OrderedDict({l: backbone_feat[l] for l in self.head_layer})
         if len(self.head_layer) == 1:
@@ -370,7 +365,6 @@ def tompnet50(
     #                                                             num_blocks=head_feat_blocks, l2norm=head_feat_norm,
     #                                                             final_conv=final_conv, norm_scale=norm_scale,
     #                                                             out_dim=out_feature_dim)
-
     transformer = trans.Transformer(
         d_model=out_feature_dim,
         nhead=nhead,
