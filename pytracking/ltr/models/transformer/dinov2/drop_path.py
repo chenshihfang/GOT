@@ -1,12 +1,11 @@
-# The core code logic was originally implemented by a human developer.
-# Codex was used for post-publication refactoring, cleanup, and code quality improvements.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+#
 # This source code is licensed under the Apache License, Version 2.0
 # found in the LICENSE file in the root directory of this source tree.
+
 # References:
 #   https://github.com/facebookresearch/dino/blob/master/vision_transformer.py
 #   https://github.com/rwightman/pytorch-image-models/tree/master/timm/layers/drop.py
-"""Legacy DINOv2 stochastic depth, preserving per-sample masking."""
 
 from torch import nn
 

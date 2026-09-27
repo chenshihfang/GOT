@@ -1,13 +1,7 @@
-# The core code logic was originally implemented by a human developer.
-# Codex was used for post-publication refactoring, cleanup, and code quality improvements.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+#
 # This source code is licensed under the Apache License, Version 2.0
 # found in the LICENSE file in the root directory of this source tree.
-"""Legacy DINOv2 adapter components and multiscale feature interactions.
-
-Spatial maps use (B, C, H, W); attention tokens use (B, N, C).
-Scale-specific reshaping and the original module registration order are kept.
-"""
 
 from functools import partial
 
@@ -38,34 +32,22 @@ def get_reference_points(spatial_shapes, device):
 def deform_inputs(x, patch_size):
     bs, c, h, w = x.shape
     spatial_shapes = torch.as_tensor(
-        [(h // 8, w // 8), (h // 16, w // 16), (h // 32, w // 32)],
-        dtype=torch.long,
-        device=x.device,
+        [(h // 8, w // 8), (h // 16, w // 16), (h // 32, w // 32)], dtype=torch.long, device=x.device
     )
-    level_start_index = torch.cat(
-        (spatial_shapes.new_zeros((1,)), spatial_shapes.prod(1).cumsum(0)[:-1])
-    )
+    level_start_index = torch.cat((spatial_shapes.new_zeros((1,)), spatial_shapes.prod(1).cumsum(0)[:-1]))
     reference_points = get_reference_points([(h // patch_size, w // patch_size)], x.device)
     deform_inputs1 = [reference_points, spatial_shapes, level_start_index]
 
-    spatial_shapes = torch.as_tensor(
-        [(h // patch_size, w // patch_size)], dtype=torch.long, device=x.device
-    )
-    level_start_index = torch.cat(
-        (spatial_shapes.new_zeros((1,)), spatial_shapes.prod(1).cumsum(0)[:-1])
-    )
-    reference_points = get_reference_points(
-        [(h // 8, w // 8), (h // 16, w // 16), (h // 32, w // 32)], x.device
-    )
+    spatial_shapes = torch.as_tensor([(h // patch_size, w // patch_size)], dtype=torch.long, device=x.device)
+    level_start_index = torch.cat((spatial_shapes.new_zeros((1,)), spatial_shapes.prod(1).cumsum(0)[:-1]))
+    reference_points = get_reference_points([(h // 8, w // 8), (h // 16, w // 16), (h // 32, w // 32)], x.device)
     deform_inputs2 = [reference_points, spatial_shapes, level_start_index]
 
     return deform_inputs1, deform_inputs2
 
 
 class ConvFFN(nn.Module):
-    def __init__(
-        self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.0
-    ):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.0):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -122,11 +104,7 @@ class Extractor(nn.Module):
         self.query_norm = norm_layer(dim)
         self.feat_norm = norm_layer(dim)
         self.attn = MSDeformAttn(
-            d_model=dim,
-            n_levels=n_levels,
-            n_heads=num_heads,
-            n_points=n_points,
-            ratio=deform_ratio,
+            d_model=dim, n_levels=n_levels, n_heads=num_heads, n_points=n_points, ratio=deform_ratio
         )
         self.with_cffn = with_cffn
         self.with_cp = with_cp
@@ -139,12 +117,7 @@ class Extractor(nn.Module):
         def _inner_forward(query, feat):
 
             attn = self.attn(
-                self.query_norm(query),
-                reference_points,
-                self.feat_norm(feat),
-                spatial_shapes,
-                level_start_index,
-                None,
+                self.query_norm(query), reference_points, self.feat_norm(feat), spatial_shapes, level_start_index, None
             )
             query = query + attn
 
@@ -177,11 +150,7 @@ class Injector(nn.Module):
         self.query_norm = norm_layer(dim)
         self.feat_norm = norm_layer(dim)
         self.attn = MSDeformAttn(
-            d_model=dim,
-            n_levels=n_levels,
-            n_heads=num_heads,
-            n_points=n_points,
-            ratio=deform_ratio,
+            d_model=dim, n_levels=n_levels, n_heads=num_heads, n_points=n_points, ratio=deform_ratio
         )
         self.gamma = nn.Parameter(init_values * torch.ones((dim)), requires_grad=True)
 
@@ -189,12 +158,7 @@ class Injector(nn.Module):
         def _inner_forward(query, feat):
 
             attn = self.attn(
-                self.query_norm(query),
-                reference_points,
-                self.feat_norm(feat),
-                spatial_shapes,
-                level_start_index,
-                None,
+                self.query_norm(query), reference_points, self.feat_norm(feat), spatial_shapes, level_start_index, None
             )
             return query + self.gamma * attn
 
@@ -435,32 +399,22 @@ class SpatialPriorModule(nn.Module):
         )
         self.conv3 = nn.Sequential(
             *[
-                nn.Conv2d(
-                    2 * inplanes, 4 * inplanes, kernel_size=3, stride=2, padding=1, bias=False
-                ),
+                nn.Conv2d(2 * inplanes, 4 * inplanes, kernel_size=3, stride=2, padding=1, bias=False),
                 nn.SyncBatchNorm(4 * inplanes),
                 nn.ReLU(inplace=True),
             ]
         )
         self.conv4 = nn.Sequential(
             *[
-                nn.Conv2d(
-                    4 * inplanes, 4 * inplanes, kernel_size=3, stride=2, padding=1, bias=False
-                ),
+                nn.Conv2d(4 * inplanes, 4 * inplanes, kernel_size=3, stride=2, padding=1, bias=False),
                 nn.SyncBatchNorm(4 * inplanes),
                 nn.ReLU(inplace=True),
             ]
         )
         self.fc1 = nn.Conv2d(inplanes, embed_dim, kernel_size=1, stride=1, padding=0, bias=True)
-        self.fc2 = nn.Conv2d(
-            2 * inplanes, embed_dim, kernel_size=1, stride=1, padding=0, bias=True
-        )
-        self.fc3 = nn.Conv2d(
-            4 * inplanes, embed_dim, kernel_size=1, stride=1, padding=0, bias=True
-        )
-        self.fc4 = nn.Conv2d(
-            4 * inplanes, embed_dim, kernel_size=1, stride=1, padding=0, bias=True
-        )
+        self.fc2 = nn.Conv2d(2 * inplanes, embed_dim, kernel_size=1, stride=1, padding=0, bias=True)
+        self.fc3 = nn.Conv2d(4 * inplanes, embed_dim, kernel_size=1, stride=1, padding=0, bias=True)
+        self.fc4 = nn.Conv2d(4 * inplanes, embed_dim, kernel_size=1, stride=1, padding=0, bias=True)
 
     def forward(self, x):
         def _inner_forward(x):
