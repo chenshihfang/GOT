@@ -1,6 +1,5 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 """Training actors for GOT-Edit, GOT-JEPA, ToMP/DiMP and legacy trackers.
 
 The shared ToMPActor is listed first because GOT-Edit uses it directly.
@@ -17,8 +16,6 @@ import torch.nn.functional as F
 # -----------------------------------------------------------------------------
 # GOT-Edit (also shared by GOT-JEPA and ToMP training)
 # -----------------------------------------------------------------------------
-
-
 # train stage 1
 class ToMPActor(BaseActor):
     """GOT-Edit training actor, also shared by ToMP and GOT-JEPA finetuning."""
@@ -63,7 +60,6 @@ class ToMPActor(BaseActor):
             A scalar loss tensor and the existing loss/IoU statistics dictionary.
         """
         # Run network
-
         target_scores, bbox_preds = self.net(
             train_imgs=data["train_images"],
             test_imgs=data["test_images"],
@@ -111,9 +107,7 @@ class ToMPActor(BaseActor):
 # -----------------------------------------------------------------------------
 # GOT-JEPA pretraining and point tracking actors
 # -----------------------------------------------------------------------------
-
-
-# GOT-JEPA model predictor pretraining
+# PT / GOT-JEPA: model predictor pretraining.
 class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
     """GOT-JEPA filter pretraining actor with original method overrides retained.
 
@@ -143,9 +137,7 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
         # xp -->  cls_filter_context_p
         # y -->  cls_filter_target
         # yExp -->  cls_filter_target_Exp
-
         # Print shapes for debugging
-
         # Reshape x and y from (B, C, 1, 1) to (B, C)
         """Compute filter-prediction and expanded-feature covariance losses.
 
@@ -173,10 +165,8 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
         # Ensure x and y have the expected shapes
         # if x.ndim != 2 or y.ndim != 2:
         #     raise ValueError("Expected 2D tensors for x and y")
-
         # if x.shape != y.shape:
         #     raise ValueError(f"Shape mismatch: x.shape = {x.shape}, y.shape = {y.shape}")
-
         batch_size = x.shape[0]
         D = xExp.shape[1]
 
@@ -184,14 +174,12 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
         # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
         # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
         # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
-
         # covariance loss
         # Use mT instead of T for transposing
         cov_x = (xExp.mT @ xExp) / (batch_size - 1)
 
         cov_loss = self.off_diagonal(cov_x).pow_(2).sum().div(D)
         # + self.off_diagonal(cov_y).pow_(2).sum().div(D)
-
         # v_scale = 2.5
         i_scale = 10000.0
         c_scale = 400.0
@@ -213,7 +201,6 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
             it does not return the earlier method's loss/statistics pair.
         """
         # Run network
-
         (
             cls_filter_context,
             breg_filter_context,
@@ -231,6 +218,7 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
             train_ltrb_target=data["train_ltrb_target"],
         )
 
+        # Note that loss_X_filter is already added to inv_loss_x
         loss_cls_filter, inv_loss_c = self.loss_fn(
             cls_filter_context, cls_filter_context_Exp, cls_filter_context_p, cls_filter_target
         )
@@ -244,7 +232,6 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
 
         loss = scale * loss_cls_filter + scale * loss_breg_filter
         # loss = self.loss_weight['giou'] * loss_cls_filter + self.loss_weight['test_clf'] * loss_breg_filter
-
         diff_loss_invloss = loss - total_inv_loss
 
         if torch.isnan(loss):
@@ -284,9 +271,7 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
         # xp -->  cls_filter_context_p
         # y -->  cls_filter_target
         # yExp -->  cls_filter_target_Exp
-
         # Print shapes for debugging
-
         # Reshape x and y from (B, C, 1, 1) to (B, C)
         """Compute filter-prediction and expanded-feature covariance losses.
 
@@ -314,10 +299,8 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
         # Ensure x and y have the expected shapes
         # if x.ndim != 2 or y.ndim != 2:
         #     raise ValueError("Expected 2D tensors for x and y")
-
         # if x.shape != y.shape:
         #     raise ValueError(f"Shape mismatch: x.shape = {x.shape}, y.shape = {y.shape}")
-
         batch_size = x.shape[0]
         D = xExp.shape[1]
 
@@ -325,14 +308,12 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
         # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
         # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
         # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
-
         # covariance loss
         # Use mT instead of T for transposing
         cov_x = (xExp.mT @ xExp) / (batch_size - 1)
 
         cov_loss = self.off_diagonal(cov_x).pow_(2).sum().div(D)
         # + self.off_diagonal(cov_y).pow_(2).sum().div(D)
-
         # v_scale = 2.5
         i_scale = 10000.0
         c_scale = 800.0
@@ -354,7 +335,6 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
             it does not return the earlier method's loss/statistics pair.
         """
         # Run network
-
         (
             cls_filter_context,
             breg_filter_context,
@@ -372,14 +352,16 @@ class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
             train_ltrb_target=data["train_ltrb_target"],
         )
 
+        # Note that loss_X_filter is already added to inv_loss_x
         loss_cls_filter, inv_loss_c = self.loss_fn(
             cls_filter_context, cls_filter_context_Exp, cls_filter_context_p, cls_filter_target
         )
         loss_breg_filter, inv
 
 
+# Joint Training of the GOT-JEPA Point Tracker
 class ToMPActor_PTcur(BaseActor):
-    """Training actor for the PTcur variant; loss behavior is retained."""
+    """Joint GOT-JEPA point-tracker training with auxiliary point-branch losses."""
 
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
@@ -435,7 +417,6 @@ class ToMPActor_PTcur(BaseActor):
         test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
 
         # Assuming train_imgs_all_ has twice the number of elements as test_imgs_all_
-
         half_length = int(len(train_imgs_all_) / 2)
 
         train_bb_first_ = torch.cat(
@@ -474,23 +455,19 @@ class ToMPActor_PTcur(BaseActor):
         test_label_mid = data["test_label"][len(test_anno_) // 2].unsqueeze(0)
         # test_label_first_ = data['test_label'][0:6] # seq
         # test_label_mid = None
-
         test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
 
         test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
         test_ltrb_target_mid_ = test_ltrb_target[len(test_anno_) // 2].unsqueeze(0)
         # test_ltrb_target_first_ = test_ltrb_target[0:6] # seq
         # test_ltrb_target_mid_ = None
-
         # Print shapes # 3 batch num_train_frames = 5*2 num_test_frames = 5
-
         # Run network
         # target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
         #                                      test_imgs=data['test_images'],
         #                                      train_bb=data['train_anno'],
         #                                      train_label=data['train_label'],
         #                                      train_ltrb_target=data['train_ltrb_target'])
-
         target_scores, bbox_preds, target_scores_PT, bbox_preds_PT = (
             self.net(  # target_scores, bbox_preds, PT_LTRB = self.net( \
                 # target_scores, track_scores, bbox_preds = self.net( \
@@ -521,15 +498,12 @@ class ToMPActor_PTcur(BaseActor):
 
         # im_size = bbox_preds.shape[-1]*14
         # PT_loss_giou = self.compute_iou_PT(test_anno_, PT_LTRB, im_size)
-
         # Classification losses for the different optimization iterations
-
         clf_loss_test = self.objective["test_clf"](target_scores, test_label_last_, test_anno_)
         clf_loss_test_PT = self.objective["test_clf"](
             target_scores_PT, test_label_last_, test_anno_
         )
         # track_clf_loss_test = self.objective['test_clf'](track_scores, test_label_last_, test_anno_)
-
         loss_ToMP = (
             self.loss_weight["giou"] * loss_giou + self.loss_weight["test_clf"] * clf_loss_test
         )
@@ -543,9 +517,7 @@ class ToMPActor_PTcur(BaseActor):
 
         # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
         # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * track_clf_loss_test
-
         # loss = 0.01 * loss_giou + 0.01 * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
-
         if torch.isnan(loss):
             raise ValueError("NaN detected in loss")
 
@@ -556,7 +528,6 @@ class ToMPActor_PTcur(BaseActor):
             target_scores_PT, data["test_ltrb_target"], bbox_preds
         )
         # track_ious_pred_center = self.compute_iou_at_max_score_pos(track_scores, data['test_ltrb_target'], bbox_preds)
-
         stats = {
             "Loss/total": loss.item(),
             "Loss/GIoU": loss_giou.item(),
@@ -593,8 +564,11 @@ class ToMPActor_PTcur(BaseActor):
         return loss, stats
 
 
+# Joint Training of the GOT-JEPA Point Tracker
 class ToMPActor_PTcurq2(BaseActor):
-    """Training actor for the PTcurq2 variant; loss behavior is retained."""
+    """Joint GOT-JEPA point-tracker training with first/middle-frame test queries
+    and auxiliary point-branch classification and box-regression losses.
+    """
 
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
@@ -688,7 +662,6 @@ class ToMPActor_PTcurq2(BaseActor):
 
         # test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
         # test_ltrb_target_mid_ = test_ltrb_target[len(test_anno_) // 2].unsqueeze(0)
-
         target_scores, bbox_preds, target_scores_PT, bbox_preds_PT = self.net(
             train_imgs=train_imgs_,
             test_imgs=test_imgs_,
@@ -768,8 +741,9 @@ class ToMPActor_PTcurq2(BaseActor):
         return loss, stats
 
 
+# Joint Training of the GOT-JEPA Point Tracker
 class ToMPActor_PT(BaseActor):
-    """Training actor for the PT variant; loss behavior is retained."""
+    """Joint GOT-JEPA point-tracker training using final-frame tracking losses."""
 
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
@@ -825,7 +799,6 @@ class ToMPActor_PT(BaseActor):
         test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
 
         # Assuming train_imgs_all_ has twice the number of elements as test_imgs_all_
-
         half_length = int(len(train_imgs_all_) / 2)
 
         train_bb_first_ = torch.cat(
@@ -864,7 +837,6 @@ class ToMPActor_PT(BaseActor):
         test_label_mid = data["test_label"][len(data) // 2].unsqueeze(0)
         # test_label_first_ = data['test_label'][0:6] # seq
         # test_label_mid = None
-
         test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
 
         test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
@@ -893,13 +865,10 @@ class ToMPActor_PT(BaseActor):
 
         clf_loss_test = self.objective["test_clf"](target_scores, test_label_last_, test_anno_)
         # track_clf_loss_test = self.objective['test_clf'](track_scores, test_label_last_, test_anno_)
-
         loss = self.loss_weight["giou"] * loss_giou + self.loss_weight["test_clf"] * clf_loss_test
         # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
         # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * track_clf_loss_test
-
         # loss = 0.01 * loss_giou + 0.01 * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
-
         if torch.isnan(loss):
             raise ValueError("NaN detected in loss")
 
@@ -907,7 +876,6 @@ class ToMPActor_PT(BaseActor):
             target_scores, data["test_ltrb_target"], bbox_preds
         )
         # track_ious_pred_center = self.compute_iou_at_max_score_pos(track_scores, data['test_ltrb_target'], bbox_preds)
-
         stats = {
             "Loss/total": loss.item(),
             "Loss/GIoU": loss_giou.item(),
@@ -929,10 +897,10 @@ class ToMPActor_PT(BaseActor):
 # -----------------------------------------------------------------------------
 # ToMP/DiMP and shared loss variants
 # -----------------------------------------------------------------------------
-
-
 class ToMPActor_autocast(BaseActor):
-    """Training actor for the autocast variant; loss behavior is retained."""
+    """Train ToMP with GIoU and classification losses using the network's
+    optional autocast path.
+    """
 
     def __init__(self, net, objective, loss_weight=None, use_autocast=False):
         super().__init__(net, objective)
@@ -975,7 +943,6 @@ class ToMPActor_autocast(BaseActor):
             stats  -  dict containing detailed losses
         """
         # Run network
-
         if self.use_autocast:
             with torch.autocast(device_type="cuda"):
                 target_scores, bbox_preds = self.net(
@@ -1037,7 +1004,7 @@ class ToMPActor_autocast(BaseActor):
 
 # train stage 1
 class ToMPActor_wL1(BaseActor):
-    """Training actor for the wL1 variant; loss behavior is retained."""
+    """Train ToMP with weighted GIoU, L1 box and classification losses."""
 
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
@@ -1079,7 +1046,6 @@ class ToMPActor_wL1(BaseActor):
             stats  -  dict containing detailed losses
         """
         # Run network
-
         target_scores, bbox_preds = self.net(
             train_imgs=data["train_images"],
             test_imgs=data["test_images"],
@@ -1134,7 +1100,7 @@ class ToMPActor_wL1(BaseActor):
 
 # train stage 1
 class ToMPActor_comlossLGHF(BaseActor):
-    """Training actor for the comlossLGHF variant; loss behavior is retained."""
+    """Train ToMP with L1 and GIoU box losses plus hinge and focal classification losses."""
 
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
@@ -1176,7 +1142,6 @@ class ToMPActor_comlossLGHF(BaseActor):
             stats  -  dict containing detailed losses
         """
         # Run network
-
         target_scores, bbox_preds = self.net(
             train_imgs=data["train_images"],
             test_imgs=data["test_images"],
@@ -1242,7 +1207,7 @@ class ToMPActor_comlossLGHF(BaseActor):
 
 
 class ToMPActor_comlossLGH(BaseActor):
-    """Training actor for the comlossLGH variant; loss behavior is retained."""
+    """Train ToMP with L1 and GIoU box losses plus hinge classification loss."""
 
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
@@ -1284,7 +1249,6 @@ class ToMPActor_comlossLGH(BaseActor):
             stats  -  dict containing detailed losses
         """
         # Run network
-
         target_scores, bbox_preds = self.net(
             train_imgs=data["train_images"],
             test_imgs=data["test_images"],
@@ -1341,7 +1305,7 @@ class ToMPActor_comlossLGH(BaseActor):
 
 # train stage 1
 class ToMPActor_comlossLGF(BaseActor):
-    """Training actor for the comlossLGF variant; loss behavior is retained."""
+    """Train ToMP with L1 and GIoU box losses plus focal classification loss."""
 
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
@@ -1383,7 +1347,6 @@ class ToMPActor_comlossLGF(BaseActor):
             stats  -  dict containing detailed losses
         """
         # Run network
-
         target_scores, bbox_preds = self.net(
             train_imgs=data["train_images"],
             test_imgs=data["test_images"],
@@ -1398,7 +1361,6 @@ class ToMPActor_comlossLGF(BaseActor):
         loss_L1 = self.objective["L1"](bbox_preds, data["test_ltrb_target"])
 
         # Classification losses for the different optimization iterations
-
         clf_loss_test_focal = self.objective["test_clf_focal"](
             target_scores, data["test_label"], data["test_anno"]
         )
@@ -1443,7 +1405,7 @@ class ToMPActor_comlossLGF(BaseActor):
 
 # train stage 1
 class ToMPActor_comlossGF(BaseActor):
-    """Training actor for the comlossGF variant; loss behavior is retained."""
+    """Train ToMP with GIoU box loss and focal classification loss."""
 
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
@@ -1485,7 +1447,6 @@ class ToMPActor_comlossGF(BaseActor):
             stats  -  dict containing detailed losses
         """
         # Run network
-
         target_scores, bbox_preds = self.net(
             train_imgs=data["train_images"],
             test_imgs=data["test_images"],
@@ -1499,7 +1460,6 @@ class ToMPActor_comlossGF(BaseActor):
         )
 
         # Classification losses for the different optimization iterations
-
         clf_loss_test_focal = self.objective["test_clf_focal"](
             target_scores, data["test_label"], data["test_anno"]
         )
@@ -1576,6 +1536,7 @@ class DiMPActor(BaseActor):
         loss_iou = self.loss_weight["iou"] * self.objective["iou"](iou_pred, data["proposal_iou"])
 
         # Loss for the initial filter iteration
+        # dclip: omit initial-filter loss when training only the MLP.
         loss_test_init_clf = 0
         if "test_init_clf" in self.loss_weight.keys():
             loss_test_init_clf = self.loss_weight["test_init_clf"] * clf_losses_test[0]
@@ -1593,10 +1554,11 @@ class DiMPActor(BaseActor):
                     clf_losses_test[1:-1]
                 )
 
+        # dclip MLP-only alternative: disable initial and intermediate filter losses.
         # loss_test_init_clf = 0
         # loss_test_iter_clf = 0
-
         # Total loss
+        # dclip: combine IoU, classifier, initial-filter and intermediate-filter losses.
         loss = loss_iou + loss_target_classifier + loss_test_init_clf + loss_test_iter_clf
 
         # Log stats
@@ -1606,11 +1568,13 @@ class DiMPActor(BaseActor):
             "Loss/target_clf": loss_target_classifier.item(),
         }
 
+        # dclip: omit these filter-iteration statistics for MLP-only training.
         if "test_init_clf" in self.loss_weight.keys():
             stats["Loss/test_init_clf"] = loss_test_init_clf.item()
         if "test_iter_clf" in self.loss_weight.keys():
             stats["Loss/test_iter_clf"] = loss_test_iter_clf.item()
 
+        # dclip: omit these classifier-iteration statistics for MLP-only training.
         stats["ClfTrain/test_loss"] = clf_loss_test.item()
         if len(clf_losses_test) > 0:
             stats["ClfTrain/test_init_loss"] = clf_losses_test[0].item()
@@ -1878,11 +1842,9 @@ class DiMPSimpleActor(BaseActor):
 # -----------------------------------------------------------------------------
 # Legacy trackers: PiVOT, CLIP, KYS and candidate matching
 # -----------------------------------------------------------------------------
-
-
 # PiVOT train stage 2
 class ToMPActor_PiVOT(BaseActor):
-    """Training actor for the PiVOT variant; loss behavior is retained."""
+    """PiVOT stage-2 training with box, classification and prompt-map supervision."""
 
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
@@ -1895,7 +1857,6 @@ class ToMPActor_PiVOT(BaseActor):
         # self.pre_clf_loss_test = torch.tensor(1)
         # self.pre_clf_prob_map = torch.tensor(1)
         # self.pre_loss_giou_hint_bbox_preds = torch.tensor(1)
-
     def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
         """Evaluate box IoU at the score-map position selected by this actor.
 
@@ -1932,7 +1893,6 @@ class ToMPActor_PiVOT(BaseActor):
             stats  -  dict containing detailed losses
         """
         # Run network
-
         target_scores, bbox_preds, prob_map = self.net(
             train_imgs=data["train_images"],
             test_imgs=data["test_images"],
@@ -1950,6 +1910,7 @@ class ToMPActor_PiVOT(BaseActor):
             target_scores, data["test_label"], data["test_anno"]
         )
 
+        # LBHinge prob_map: supervise the PiVOT prompt probability map.
         clf_prob_map = self.objective["test_clf"](prob_map, data["test_label"], data["test_anno"])
 
         loss = (
@@ -2023,7 +1984,6 @@ class DiMPActor_clip(BaseActor):
         loss_iou = self.loss_weight["iou"] * self.objective["iou"](iou_pred, data["proposal_iou"])
 
         # Loss Clf :a aaa a-1 dclip fuse
-
         # Loss for the initial filter iteration
         loss_test_init_clf = 0
         loss_test_init_clf = self.loss_weight["test_init_clf"] * clf_losses_test[0]
