@@ -1,6 +1,5 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 """Shared ToMP filter prediction for GOT-Edit and GOT-JEPA tracking.
 
 Features, labels and dense box targets are encoded as transformer tokens.
@@ -18,8 +17,6 @@ import torch.nn.functional as F
 # -----------------------------------------------------------------------------
 # GOT-Edit / GOT-JEPA / ToMP: filter prediction
 # -----------------------------------------------------------------------------
-
-
 # FilterPredictor FilterPredictor_ori
 class FilterPredictor(nn.Module):
     def __init__(self, transformer, feature_sz, use_test_frame_encoding=True):
@@ -110,7 +107,6 @@ class FilterPredictor(nn.Module):
         train_ltrb_target_enc = self.box_encoding(train_ltrb_target_seq_T).permute(2, 0, 1)
 
         # bat 3
-
         if self.use_test_frame_encoding:
             test_token = self.query_embed_test.weight.reshape(1, 1, -1)
             test_label_enc = torch.ones_like(test_feat_seq) * test_token
@@ -239,8 +235,6 @@ class FilterPredictor(nn.Module):
 # -----------------------------------------------------------------------------
 # Shared convolutional encoding helper
 # -----------------------------------------------------------------------------
-
-
 def MLP(channels, do_bn=True):
     """Build the original channel-wise Conv1d stack; input/output layout is (B, C, L)."""
     n = len(channels)

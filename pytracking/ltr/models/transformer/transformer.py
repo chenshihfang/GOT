@@ -1,6 +1,5 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 # --------------------------------------------------------------------*/
 # This file includes code from https://github.com/facebookresearch/detr/blob/main/models/detr.py
 # --------------------------------------------------------------------*/
@@ -26,8 +25,6 @@ import math
 # -----------------------------------------------------------------------------
 # GOT-Edit and GOT-JEPA: main transformer and checkpoint-aware encoder
 # -----------------------------------------------------------------------------
-
-
 # Transformer_ori
 class Transformer(nn.Module):
     def __init__(
@@ -52,7 +49,6 @@ class Transformer(nn.Module):
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
 
         # self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
-
         self.encoder = TransformerEncoder(
             encoder_layer, num_encoder_layers, encoder_norm, use_ckpt=use_ckpt, ckpt_impl=ckpt_impl
         )
@@ -248,8 +244,6 @@ class TransformerEncoder(nn.Module):
 # -----------------------------------------------------------------------------
 # ToMP and shared decoder, layers and construction helpers
 # -----------------------------------------------------------------------------
-
-
 # TransformerDecoder_ori
 class TransformerDecoder(nn.Module):
 
@@ -602,8 +596,6 @@ def _get_activation_fn(activation):
 # -----------------------------------------------------------------------------
 # Legacy encoder
 # -----------------------------------------------------------------------------
-
-
 # TransformerEncoder_ori
 class TransformerEncoder_ori(nn.Module):
     def __init__(self, encoder_layer, num_layers, norm=None):

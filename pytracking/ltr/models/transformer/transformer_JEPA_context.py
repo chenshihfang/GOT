@@ -1,6 +1,5 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 # --------------------------------------------------------------------*/
 # This file includes code from https://github.com/facebookresearch/detr/blob/main/models/detr.py
 # --------------------------------------------------------------------*/
@@ -28,8 +27,6 @@ use_xformers = False
 # -----------------------------------------------------------------------------
 # GOT-JEPA: context transformer
 # -----------------------------------------------------------------------------
-
-
 class Transformer(nn.Module):
     def __init__(
         self,
@@ -170,8 +167,6 @@ class TransformerDecoder(nn.Module):
 # -----------------------------------------------------------------------------
 # Shared transformer layers and construction helpers
 # -----------------------------------------------------------------------------
-
-
 # ori
 # class TransformerEncoderLayer_ori(nn.Module):
 class TransformerEncoderLayer(nn.Module):
@@ -472,8 +467,7 @@ def _get_activation_fn(activation):
 # -----------------------------------------------------------------------------
 # Optional attention variant
 # -----------------------------------------------------------------------------
-
-
+# xformers
 class TransformerEncoderLayer_xformers(nn.Module):
     # class TransformerEncoderLayer(nn.Module):
     def __init__(
