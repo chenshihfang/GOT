@@ -1,12 +1,11 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 """Tracking heads, geometry adapters and filter prediction components.
 
 Reading order: GOT-Edit, GOT-JEPA, ToMP/DiMP or shared components, then
 legacy trackers and experimental variants. Shared components appear once.
 Tensor notation: T = frames, B = sequences, C = channels, H/W = feature size.
-Repeated legacy class names intentionally retain their original relative
+Repeated class names intentionally retain their original relative
 order: the final definition of each name remains the exported implementation.
 """
 
@@ -50,8 +49,7 @@ print("Pbias", Pbias)
 # -----------------------------------------------------------------------------
 # GOT-Edit: tracking head, spatial fusion and geometry adapters
 # -----------------------------------------------------------------------------
-
-
+# Head_JEPAs2 (wP) AlphaEdit Head_AlphaEditv2_robust  # GOT-Edit Online Model Editing
 class Head(nn.Module):
     """GOT-Edit head combining semantic filter prediction and geometry updates.
 
@@ -81,7 +79,6 @@ class Head(nn.Module):
 
         self.splitCfilter = True
         # self.splitCfilter = False
-
         print("self.splitCfilter head", self.splitCfilter)
 
         # self.auto_cast_full = True
@@ -133,7 +130,6 @@ class Head(nn.Module):
             self._register_grad_nan_guard()
 
     # ---------- utility: strict finiteness and clamping ----------
-
     @staticmethod
     def _is_finite(x: torch.Tensor) -> bool:
         return torch.isfinite(x).all().item()
@@ -169,7 +165,6 @@ class Head(nn.Module):
                 p.register_hook(_guard)
 
     # ---------- a safe call wrapper for numerically spiky modules ----------
-
     def _safe_fp32_call(self, fn, name: str, *args, **kwargs):
         """
         Run the given callable in fp32 with pre/post sanitization.
@@ -256,7 +251,6 @@ class Head(nn.Module):
                 # 2) scale ridge by the current mean spectral energy;
                 # 3) improve conditioning by lifting small eigenvalues,
                 #    without changing the eigendirections.
-
                 # Convert token-summed ZZ^T to token-averaged channel correlation.
                 Ctok = cov_sum / float(max(N, 1))  # (B,C,C), Ctok = (1/N)ZZ^T
 
@@ -391,7 +385,6 @@ class Head(nn.Module):
                 delta_null = torch.clamp(delta_null, -dc, dc)
 
             # ---------------- M3: step-size / gating mode ----------------
-
             tau0 = float(hparams.get("trust", 0.2))  # keep  naming: trust == tau0
             # original M3: fixed step
             tau = torch.full((B, 1, 1, 1), tau0, device=delta_null.device, dtype=torch.float32)
@@ -402,7 +395,6 @@ class Head(nn.Module):
             return w_refined
 
     # ---------- main forward ----------
-
     def forward(
         self,
         train_feat,
@@ -493,7 +485,6 @@ class Head(nn.Module):
         test_feat_enc_vggt = self._sanitize(test_feat_enc_vggt, "test_feat_enc_vggt(pre)")
 
         # ---- JEPA on VGGT branch + linear head (force fp32) ----
-
         if not self.splitCfilter:
             cls_filter_vggt = self._safe_fp32_call(
                 JEPA_predictor_cls, "JEPA_predictor_cls(vggt)", cls_filter_vggt
@@ -542,7 +533,6 @@ class Head(nn.Module):
         return target_scores, bbox_preds
 
     # ---------- helpers from  original code (kept) ----------
-
     def extract_head_feat(self, feat, num_sequences=None):
         if self.feature_extractor is None:
             return feat
@@ -891,7 +881,6 @@ class vggtDPTfeatMlp(nn.Module):
 
         # if reduction_factor <= 0 or 144 % dino_patch_size != 0:
         #     raise ValueError(f"Input size 144 must be divisible by dino_patch_size {dino_patch_size}")
-
         # --- Gradual Downsampling Paths ---
         # Path for input (B, S, 256, 144, 144)
         self.path256_stages = nn.Sequential(
@@ -932,7 +921,6 @@ class vggtDPTfeatMlp(nn.Module):
         B, S, C, H, W = x.size()
         # if H != 144 or W != 144:
         #     raise ValueError(f"Expected input spatial dimensions (144, 144), but got ({H}, {W})")
-
         reshaped_x = x.view(B * S, C, H, W)
         identity = reshaped_x  # For the skip connection
 
@@ -1107,7 +1095,6 @@ class LabelExpNet(nn.Module):
             in_channels=1, out_channels=256, kernel_size=1, bias=True
         )
         # self.label_channel_expander = nn.Conv2d(in_channels=1, out_channels=1024, kernel_size=1, bias=True)
-
         # Convolutional layer to expand channels for the second input (ltrb)
         # Input channels: 4
         # Output channels: 256
@@ -1116,7 +1103,6 @@ class LabelExpNet(nn.Module):
             in_channels=4, out_channels=256, kernel_size=1, bias=True
         )
         # self.ltrb_channel_expander = nn.Conv2d(in_channels=4, out_channels=1024, kernel_size=1, bias=True)
-
         # Initialize weights
         self._reset_parameters()
         print("LabelExpNet initialized")
@@ -1153,7 +1139,6 @@ class LabelExpNet(nn.Module):
         #     "Shape mismatch for vggt_train_ltrb_target_enc"
         # assert vggt_train_ltrb_target_enc.shape[3:] == (H, W), \
         #     "Spatial dimensions mismatch between inputs"
-
         # Reshape and add channel for the first input (label)
         # (2, B, H, W) -> (2*B, H, W)
         reshaped_label = vggt_train_label_enc.reshape(dim2 * B, H, W)
@@ -1305,8 +1290,6 @@ class bkMlpMOEv2(nn.Module):
 # -----------------------------------------------------------------------------
 # GOT-JEPA: context/target heads and point tracking components
 # -----------------------------------------------------------------------------
-
-
 class Head_JEPA_context(nn.Module):
     """Trainable GOT-JEPA context head that returns classification and regression filters."""
 
@@ -1348,19 +1331,15 @@ class Head_JEPA_context(nn.Module):
             test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
 
         # ### note
-
         # train_feat.shape 1 torch.Size([B,1024, h, w])
         # test_feat.shape 1 torch.Size([B,1024, h, w])
-
         # Extract features
         train_feat = self.extract_head_feat(train_feat, num_sequences)
         test_feat = self.extract_head_feat(test_feat, num_sequences)
 
         # self.extract_head_feat -> pass by residual_bottleneck, 1024 -> 256
-
         # train_feat.shape 3 torch.Size([2, 2, 256, h, w])
         # test_feat.shape 3 torch.Size([1, 2, 256, h, w])
-
         # Train filter
         cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(
             train_feat, test_feat, *args, **kwargs
@@ -1368,10 +1347,8 @@ class Head_JEPA_context(nn.Module):
 
         # fuse encoder and decoder features to one feature map
         # target_scores = self.classifier(test_feat_enc, cls_filter)
-
         # compute the final prediction using the output module
         # bbox_preds = self.bb_regressor(test_feat_enc, breg_filter)
-
         return cls_filter, breg_filter
 
     def extract_head_feat(self, feat, num_sequences=None):
@@ -1461,19 +1438,15 @@ class Head_JEPA_target(nn.Module):
             test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
 
         # ### note
-
         # train_feat.shape 1 torch.Size([B,1024, h, w])
         # test_feat.shape 1 torch.Size([B,1024, h, w])
-
         # Extract features
         train_feat = self.extract_head_feat(train_feat, num_sequences)
         test_feat = self.extract_head_feat(test_feat, num_sequences)
 
         # self.extract_head_feat -> pass by residual_bottleneck, 1024 -> 256
-
         # train_feat.shape 3 torch.Size([2, 2, 256, h, w])
         # test_feat.shape 3 torch.Size([1, 2, 256, h, w])
-
         # Train filter
         cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(
             train_feat, test_feat, *args, **kwargs
@@ -1481,10 +1454,8 @@ class Head_JEPA_target(nn.Module):
 
         # fuse encoder and decoder features to one feature map
         # target_scores = self.classifier(test_feat_enc, cls_filter)
-
         # compute the final prediction using the output module
         # bbox_preds = self.bb_regressor(test_feat_enc, breg_filter)
-
         return cls_filter, breg_filter
 
     def extract_head_feat(self, feat, num_sequences=None):
@@ -1538,13 +1509,10 @@ class JEPA_VICReg_Exp_c(nn.Module):
         # cha = 2048
         bis = False
         # bis = True
-
         # method = "256"
         # method = "256512"
-
         method = "25610241024"
         # method = "25651210242048"
-
         print("JEPA_VICReg_Exp_c bis", bis)
         print("method", method)
 
@@ -1605,13 +1573,10 @@ class JEPA_VICReg_Exp_r(nn.Module):
         # cha = 2048
         bis = False
         # bis = True
-
         # method = "256"
         # method = "256512"
-
         method = "25610241024"
         # method = "25651210242048"
-
         print("JEPA_VICReg_Exp_r bis", bis)
         print("method", method)
 
@@ -1687,6 +1652,7 @@ class LinearFilterClassifierJC(nn.Module):
         return filter_layer.apply_filter(feat, filter_proj)
 
 
+# Head_JEPAs2 (wP) Head_bf16
 class Head_bf16(nn.Module):
     """GOT-JEPA prediction head retaining the original mixed-precision controls."""
 
@@ -1743,7 +1709,6 @@ class Head_bf16(nn.Module):
             test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
 
         # ### note
-
         # Extract features
         train_feat = self.extract_head_feat(train_feat, num_sequences)
         test_feat = self.extract_head_feat(test_feat, num_sequences)
@@ -1848,6 +1813,8 @@ class Head_bf16(nn.Module):
         return cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc
 
 
+# ToMP_JEPA_PT
+# PT Head_PT
 class Head_PT(nn.Module):
     """GOT-JEPA head with point-track attention and optional auxiliary point losses."""
 
@@ -1877,7 +1844,6 @@ class Head_PT(nn.Module):
 
         self.TFwPTT = False  # testFeat_w_PTfeat # train
         # self.TFwPTT = True   # testFeat_w_PTtrack # infer  # train
-
         print("self.TFwPTT Head init", self.TFwPTT)
 
         # self.TFEcatAttn = False
@@ -1909,10 +1875,8 @@ class Head_PT(nn.Module):
             test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
 
         # ### note
-
         # train_feat.shape 1 torch.Size([B,1024, h, w])
         # test_feat.shape 1 torch.Size([B,1024, h, w])
-
         # Extract features
         train_feat = self.extract_head_feat(train_feat, num_sequences)
         test_feat = self.extract_head_feat(test_feat, num_sequences)
@@ -1920,12 +1884,9 @@ class Head_PT(nn.Module):
         # heat_show(test_feat[0][0][0], "test_feat[0][0][0]")
         # heat_show(test_feat[0][0][100], "test_feat[0][0][100]")
         # heat_show(test_feat[0][0][200], "test_feat[0][0][200]")
-
         # self.extract_head_feat -> pass by residual_bottleneck, 1024 -> 256
-
         # train_feat.shape 3 torch.Size([2, 2, 256, h, w])
         # test_feat.shape 3 torch.Size([1, 2, 256, h, w])
-
         # Train filter
         cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(
             train_feat, test_feat, *args, **kwargs
@@ -1937,13 +1898,12 @@ class Head_PT(nn.Module):
         # heat_show(test_feat_enc[0][0][0], "test_feat_enc[0][0][0]")
         # heat_show(test_feat_enc[0][0][100], "test_feat_enc[0][0][100]")
         # heat_show(test_feat_enc[0][0][200], "test_feat_enc[0][0][200]")
-
         # PT
-
         PT_promPTweight = PTrackAttentionModel(
             test_tracks_transformed, test_feat, self.TFwPTT
         )  # F test_feat T track
 
+        # Using PT cur_feat to predict
         if self.auxPTcurloss:
             target_scores_PT = self.classifier(PT_promPTweight, cls_filter)
             bbox_preds_PT = self.bb_regressor(PT_promPTweight, breg_filter)
@@ -1964,12 +1924,10 @@ class Head_PT(nn.Module):
             test_feat_enc = TFEcatmlp(test_feat_enc, PT_promPTweight).unsqueeze(0)
 
         # PT
-
         # fuse encoder and decoder features to one feature map
         target_scores = self.classifier(test_feat_enc, cls_filter)
 
         # heat_show(target_scores[0][0], "target_scores[0][0]")
-
         # compute the final prediction using the output module
         bbox_preds = self.bb_regressor(test_feat_enc, breg_filter)
 
@@ -2148,7 +2106,6 @@ class SideNetwork_U(nn.Module):
         bk_feat = self.drop2(bk_feat)
 
         # Restoring original dimensions and permute back
-
         # Permute back from [B*T, C, N] to [B*T, N, C]
         permuted_back_feat = bk_feat.permute(0, 2, 1)
         # View (or reshape) back to original shape [B, T, N, C]
@@ -2188,7 +2145,6 @@ class PTrackAttentionModel(nn.Module):
 
         # Define the additional positional embeddings for the combined sequence
         # self.combined_positional_embedding = nn.Parameter(torch.randn(1, 1, feature_dim, (height * width)*2*2))
-
         # Define separate positional embeddings for demonstration and query data
         # self.demo_positional_embedding = nn.Parameter(torch.randn(1, 1, feature_dim, (height * width)*2))
         if self.wQpos:
@@ -2248,7 +2204,6 @@ class PTrackAttentionModel(nn.Module):
         output = self.activation(output)
 
         # Assuming the transformer output is correctly reshaped
-
         # Calculate the number of samples (batch size) and other dimensions
         feature_dim = output.shape[2]
         height = test_features_.shape[-2]
@@ -2315,6 +2270,63 @@ class PointEmbeddingNetwork(nn.Module):
         return x
 
 
+# TFEcatmlp_v1
+class TFEcatmlp_(nn.Module):
+    def __init__(self, dropout=0.0, **kwargs):
+        super().__init__()
+
+        self.mlp = nn.Sequential(
+            nn.Conv2d(256 * 2, 256, 1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.GELU(),
+        )
+
+        self.gelu = nn.GELU()
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        print("TFEcatmlp_v1 _reset_parameters done")
+
+    def forward(self, bk_feat):
+
+        out = self.mlp(bk_feat)
+
+        return out
+
+
+# TFEcatmlpconv3bt
+class TFEcatmlp_(nn.Module):
+    def __init__(self, dropout=0.0, **kwargs):
+        super().__init__()
+
+        self.mlp = nn.Sequential(
+            nn.Conv2d(256 * 2, 256, kernel_size=3, padding=1),
+            # nn.Conv2d(256*2, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.GELU(),
+        )
+
+        self.gelu = nn.GELU()
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        print("TFEcatmlpconv3 _reset_parameters done")
+
+    def forward(self, bk_feat):
+
+        out = self.mlp(bk_feat)
+
+        return out
+
+
 # TFEcatmlpconv3btAttn
 # TFEcatmlpconv1btAttn
 class TFEcatmlp(nn.Module):
@@ -2343,10 +2355,8 @@ class TFEcatmlp(nn.Module):
 
         # Define the additional positional embeddings for the combined sequence
         # self.combined_positional_embedding = nn.Parameter(torch.randn(1, 1, feature_dim, (height * width)*2*2))
-
         # Define separate positional embeddings for demonstration and query data
         # self.demo_positional_embedding = nn.Parameter(torch.randn(1, 1, feature_dim, (height * width)*2))
-
         self.query_positional_embedding = nn.Parameter(
             torch.randn(1, 1, feature_dim, (height * width) * 2)
         )
@@ -2392,7 +2402,6 @@ class TFEcatmlp(nn.Module):
         test_combined = self.combine_tracks_features(test_tracks_, test_features_)
 
         # Apply separate positional embeddings to demonstration and query data
-
         test_combined = test_combined + self.query_positional_embedding
 
         # Squeeze the unnecessary dimension
@@ -2410,7 +2419,6 @@ class TFEcatmlp(nn.Module):
         output = self.activation(output)
 
         # Assuming the transformer output is correctly reshaped
-
         # Calculate the number of samples (batch size) and other dimensions
         feature_dim = output.shape[2]
         height = test_features_.shape[-2]
@@ -2476,7 +2484,6 @@ class PTlabelEmbeddingNetwork(nn.Module):
     def forward(self, x):
 
         # out = self.conv(x.permute(1,0,2,3)).contiguous()
-
         # Interpolate to expand spatial dimensions
         """Embed the current target label at the point-tracker resolution.
 
@@ -2487,7 +2494,6 @@ class PTlabelEmbeddingNetwork(nn.Module):
         """
         out = F.interpolate(x, size=(96, 128), mode="bilinear", align_corners=False)
         # out = F.interpolate(out, size=(96, 128), mode='bilinear', align_corners=False)
-
         # Apply convolution
         out = self.conv(out.permute(1, 0, 2, 3)).contiguous()
 
@@ -2510,10 +2516,8 @@ class ltrbtargetEmbeddingNetwork(nn.Module):
 
     def forward(self, x):
         # x shape: torch.Size([1, 3, 4, h, w])
-
         # Apply convolution
         # out = self.conv(x.squeeze(0))
-
         # Interpolate to expand spatial dimensions
         # out = F.interpolate(out, size=(96, 128), mode='bilinear', align_corners=False)
         """Embed the current dense box target at the point-tracker resolution.
@@ -2532,10 +2536,402 @@ class ltrbtargetEmbeddingNetwork(nn.Module):
 
 
 # -----------------------------------------------------------------------------
+# ToMP / GOT-JEPA head variants (original same-name definition order)
+# -----------------------------------------------------------------------------
+# Head_ToMP
+class Head_(nn.Module):
+    """Head_ToMP: predict target scores and boxes from ToMP filters.
+
+    This retained variant uses the filter predictor directly, without the JEPA
+    classification/regression predictors used by the later Head_ variants.
+    The later Head_ definitions replace this name when the module is imported.
+    """
+
+    def __init__(
+        self,
+        filter_predictor,
+        feature_extractor,
+        classifier,
+        bb_regressor,
+        separate_filters_for_cls_and_bbreg=False,
+    ):
+        super().__init__()
+
+        self.filter_predictor = filter_predictor
+        self.feature_extractor = feature_extractor
+        self.classifier = classifier
+        self.bb_regressor = bb_regressor
+        self.separate_filters_for_cls_and_bbreg = separate_filters_for_cls_and_bbreg
+
+        self.permute = 1
+        print("Head_ToMP")
+
+    def forward(self, train_feat, test_feat, train_bb, *args, **kwargs):
+        assert train_bb.dim() == 3
+
+        num_sequences = train_bb.shape[1]
+
+        if train_feat.dim() == 5:
+            train_feat = train_feat.reshape(-1, *train_feat.shape[-3:])
+        if test_feat.dim() == 5:
+            test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
+
+        # ### note
+        # train_feat.shape 1 torch.Size([B,1024, h, w])
+        # test_feat.shape 1 torch.Size([B,1024, h, w])
+        # Extract features
+        train_feat = self.extract_head_feat(train_feat, num_sequences)
+        test_feat = self.extract_head_feat(test_feat, num_sequences)
+
+        # self.extract_head_feat -> pass by residual_bottleneck, 1024 -> 256
+        # train_feat.shape 3 torch.Size([2, 2, 256, h, w])
+        # test_feat.shape 3 torch.Size([1, 2, 256, h, w])
+        # Train filter
+        cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(
+            train_feat, test_feat, *args, **kwargs
+        )
+
+        # fuse encoder and decoder features to one feature map
+        target_scores = self.classifier(test_feat_enc, cls_filter)
+
+        # compute the final prediction using the output module
+        bbox_preds = self.bb_regressor(test_feat_enc, breg_filter)
+
+        return target_scores, bbox_preds
+
+    def extract_head_feat(self, feat, num_sequences=None):
+        """Extract classification features based on the input backbone features."""
+        if self.feature_extractor is None:
+
+            return feat
+        if num_sequences is None:
+
+            return self.feature_extractor(feat)
+
+        output = self.feature_extractor(feat)
+
+        return output.reshape(-1, num_sequences, *output.shape[-3:])
+
+    def get_filter_and_features(self, train_feat, test_feat, train_label, *args, **kwargs):
+
+        # feat:  Input feature maps. Dims (images_in_sequence, sequences, feat_dim, H, W).
+        if self.separate_filters_for_cls_and_bbreg:
+            cls_weights, bbreg_weights, test_feat_enc = self.filter_predictor(
+                train_feat, test_feat, train_label, *args, **kwargs
+            )
+        else:
+            weights, test_feat_enc = self.filter_predictor(
+                train_feat, test_feat, train_label, *args, **kwargs
+            )
+            cls_weights = bbreg_weights = weights
+
+        return cls_weights, bbreg_weights, test_feat_enc
+
+    def get_filter_and_features_in_parallel(
+        self, train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
+    ):
+
+        cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc = (
+            self.filter_predictor.predict_cls_bbreg_filters_parallel(
+                train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
+            )
+        )
+
+        return cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc
+
+
+# Head_JEPAs2 (wP) tompnet_JEPAp  / VGGT_early_fuse_True
+class Head_(nn.Module):
+    """Head_JEPAs2 (wP): tompnet_JEPAp / VGGT_early_fuse_True variant.
+
+    Apply JEPA classification and box-regression predictors to the learned
+    filters before scoring the encoded test features. The following Head_
+    point-tracking variant replaces this name when the module is imported.
+    """
+
+    def __init__(
+        self,
+        filter_predictor,
+        feature_extractor,
+        classifier,
+        bb_regressor,
+        separate_filters_for_cls_and_bbreg=False,
+    ):
+        super().__init__()
+
+        self.filter_predictor = filter_predictor
+        self.feature_extractor = feature_extractor
+        self.classifier = classifier
+        self.bb_regressor = bb_regressor
+        self.separate_filters_for_cls_and_bbreg = separate_filters_for_cls_and_bbreg
+
+        self.permute = 1
+
+        print("Head_JEPAs2")
+
+    def forward(
+        self,
+        train_feat,
+        test_feat,
+        train_bb,
+        JEPA_predictor_cls,
+        JEPA_predictor_breg,
+        auto_cast_full,
+        dtype,
+        infer_bf16,
+        *args,
+        **kwargs,
+    ):
+        assert train_bb.dim() == 3
+
+        num_sequences = train_bb.shape[1]
+
+        if train_feat.dim() == 5:
+            train_feat = train_feat.reshape(-1, *train_feat.shape[-3:])
+        if test_feat.dim() == 5:
+            test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
+
+        # ### note
+        # train_feat.shape 1 torch.Size([B,1024, h, w])
+        # test_feat.shape 1 torch.Size([B,1024, h, w])
+        # Extract features
+        train_feat = self.extract_head_feat(train_feat, num_sequences)
+        test_feat = self.extract_head_feat(test_feat, num_sequences)
+
+        # self.extract_head_feat -> pass by residual_bottleneck, 1024 -> 256
+        # train_feat.shape 3 torch.Size([2, 2, 256, h, w])
+        # test_feat.shape 3 torch.Size([1, 2, 256, h, w])
+        # Train filter
+        # cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(train_feat, test_feat, *args, **kwargs)
+        cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(
+            auto_cast_full, dtype, infer_bf16, train_feat, test_feat, *args, **kwargs
+        )
+
+        cls_filter = JEPA_predictor_cls(cls_filter)
+        breg_filter = JEPA_predictor_breg(breg_filter)
+
+        # fuse encoder and decoder features to one feature map
+        target_scores = self.classifier(test_feat_enc, cls_filter)
+
+        # compute the final prediction using the output module
+        bbox_preds = self.bb_regressor(test_feat_enc, breg_filter)
+
+        return target_scores, bbox_preds
+
+    def extract_head_feat(self, feat, num_sequences=None):
+        """Extract classification features based on the input backbone features."""
+        if self.feature_extractor is None:
+
+            return feat
+        if num_sequences is None:
+
+            return self.feature_extractor(feat)
+
+        output = self.feature_extractor(feat)
+
+        return output.reshape(-1, num_sequences, *output.shape[-3:])
+
+    # def get_filter_and_features(self, train_feat, test_feat, train_label, *args, **kwargs):
+    def get_filter_and_features(
+        self,
+        auto_cast_full,
+        dtype,
+        infer_bf16,
+        train_feat,
+        test_feat,
+        train_label,
+        *args,
+        **kwargs,
+    ):
+
+        if (auto_cast_full and self.training) or (auto_cast_full and infer_bf16):
+            with torch.cuda.amp.autocast(dtype=dtype):
+                # feat:  Input feature maps. Dims (images_in_sequence, sequences, feat_dim, H, W).
+                if self.separate_filters_for_cls_and_bbreg:
+                    cls_weights, bbreg_weights, test_feat_enc = self.filter_predictor(
+                        train_feat, test_feat, train_label, *args, **kwargs
+                    )
+                else:
+                    weights, test_feat_enc = self.filter_predictor(
+                        train_feat, test_feat, train_label, *args, **kwargs
+                    )
+                    cls_weights = bbreg_weights = weights
+        else:
+            # feat:  Input feature maps. Dims (images_in_sequence, sequences, feat_dim, H, W).
+            if self.separate_filters_for_cls_and_bbreg:
+                cls_weights, bbreg_weights, test_feat_enc = self.filter_predictor(
+                    train_feat, test_feat, train_label, *args, **kwargs
+                )
+            else:
+                weights, test_feat_enc = self.filter_predictor(
+                    train_feat, test_feat, train_label, *args, **kwargs
+                )
+                cls_weights = bbreg_weights = weights
+
+        return cls_weights, bbreg_weights, test_feat_enc
+
+    def get_filter_and_features_in_parallel(
+        self, train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
+    ):
+
+        print("self.net.auto_cast_full", self.net.auto_cast_full)
+
+        if (self.net.auto_cast_full and self.training) or (
+            self.net.auto_cast_full and self.infer_bf16
+        ):
+            with torch.cuda.amp.autocast(dtype=self.net.dtype):
+                cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc = (
+                    self.filter_predictor.predict_cls_bbreg_filters_parallel(
+                        train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
+                    )
+                )
+        else:
+            cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc = (
+                self.filter_predictor.predict_cls_bbreg_filters_parallel(
+                    train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
+                )
+            )
+
+        return cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc
+
+
+# tompnet_GOTPT_JEPA_s2 GOTPT_JEPA_PTAttadd_initMPJEPAnHead_s2
+class Head_(nn.Module):
+    """GOT-JEPA stage-2 point-tracking head for tompnet_GOTPT_JEPA_s2.
+
+    Variant: GOTPT_JEPA_PTAttadd_initMPJEPAnHead_s2. Combine point-track
+    attention with test features before filter prediction, then adapt the
+    classification and regression filters with JEPA predictors. This is the final Head_ definition
+    and therefore the implementation exported under that name.
+    """
+
+    def __init__(
+        self,
+        filter_predictor,
+        feature_extractor,
+        classifier,
+        bb_regressor,
+        separate_filters_for_cls_and_bbreg=False,
+    ):
+        super().__init__()
+
+        self.filter_predictor = filter_predictor
+        self.feature_extractor = feature_extractor
+        self.classifier = classifier
+        self.bb_regressor = bb_regressor
+        self.separate_filters_for_cls_and_bbreg = separate_filters_for_cls_and_bbreg
+
+        self.TFwPTT = False  # testFeat_w_PTfeat # train auxPTcurloss2x2
+        # self.TFwPTT = True   # testFeat_w_PTtrack # infer  # train auxPTcurloss2x2_TFwPTT1_hclsw_s40
+        print("self.TFwPTT Head init", self.TFwPTT)
+
+        self.PT_cur_TEnc = True
+        # self.PT_cur_TEnc = False
+        self.PTAttadd = True
+        # self.PTAttadd = False
+        print("self.PT_cur_TEnc", self.PT_cur_TEnc)
+
+        print("tompnet_GOTPT_JEPA_s2")
+
+    def forward(
+        self,
+        train_feat,
+        test_feat,
+        train_bb,
+        test_tracks_transformed,
+        PTrackAttentionModel,
+        JEPA_predictor_cls,
+        JEPA_predictor_breg,
+        # TF_mlp,
+        *args,
+        **kwargs,
+    ):
+
+        assert train_bb.dim() == 3
+
+        num_sequences = train_bb.shape[1]
+
+        if train_feat.dim() == 5:
+            train_feat = train_feat.reshape(-1, *train_feat.shape[-3:])
+        if test_feat.dim() == 5:
+            test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
+
+        # Extract features
+        train_feat = self.extract_head_feat(train_feat, num_sequences)
+        test_feat = self.extract_head_feat(test_feat, num_sequences)
+
+        if self.PT_cur_TEnc and self.PTAttadd:
+            test_feat_ori = test_feat.clone()
+
+        if self.PT_cur_TEnc:
+            test_feat = PTrackAttentionModel(test_tracks_transformed, test_feat, self.TFwPTT)
+
+        if self.PT_cur_TEnc and self.PTAttadd:
+            test_feat = test_feat_ori + test_feat
+
+        # Train filter
+        cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(
+            train_feat, test_feat, *args, **kwargs
+        )
+
+        # TFEaddTF
+        # test_feat_enc = test_feat_enc + TF_mlp(test_feat)
+        cls_filter_p = JEPA_predictor_cls(cls_filter)
+        breg_filter_p = JEPA_predictor_breg(breg_filter)
+
+        # fuse encoder and decoder features to one feature map
+        target_scores = self.classifier(test_feat_enc, cls_filter_p)
+
+        # heat_show(target_scores[0][0], "target_scores[0][0]")
+        # compute the final prediction using the output module
+        bbox_preds = self.bb_regressor(test_feat_enc, breg_filter_p)
+
+        return target_scores, bbox_preds
+
+    def extract_head_feat(self, feat, num_sequences=None):
+        """Extract classification features based on the input backbone features."""
+        if self.feature_extractor is None:
+
+            return feat
+        if num_sequences is None:
+
+            return self.feature_extractor(feat)
+
+        output = self.feature_extractor(feat)
+
+        return output.reshape(-1, num_sequences, *output.shape[-3:])
+
+    def get_filter_and_features(self, train_feat, test_feat, train_label, *args, **kwargs):
+
+        # feat:  Input feature maps. Dims (images_in_sequence, sequences, feat_dim, H, W).
+        if self.separate_filters_for_cls_and_bbreg:
+            cls_weights, bbreg_weights, test_feat_enc = self.filter_predictor(
+                train_feat, test_feat, train_label, *args, **kwargs
+            )
+        else:
+            weights, test_feat_enc = self.filter_predictor(
+                train_feat, test_feat, train_label, *args, **kwargs
+            )
+            cls_weights = bbreg_weights = weights
+
+        return cls_weights, bbreg_weights, test_feat_enc
+
+    def get_filter_and_features_in_parallel(
+        self, train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
+    ):
+
+        cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc = (
+            self.filter_predictor.predict_cls_bbreg_filters_parallel(
+                train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
+            )
+        )
+
+        return cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc
+
+
+# -----------------------------------------------------------------------------
 # ToMP/DiMP and shared feature, filter and positional components
 # -----------------------------------------------------------------------------
-
-
 # bkMlpresdv2_L
 class bkMlp(nn.Module):
     class ResidualBlock(nn.Module):
@@ -2581,6 +2977,285 @@ class bkMlp(nn.Module):
             Features (N, 1024, H, W).
         """
         out = self.residual_cnn(bk_feat)
+        return out
+
+
+# bkMlpresdv2_H
+class bkMlp_H(nn.Module):
+    class ResidualBlock(nn.Module):
+        def __init__(self):
+            super(bkMlp_H.ResidualBlock, self).__init__()
+
+            self.conv_block = nn.Sequential(
+                nn.Conv2d(1280, 1280, 1, bias=False), nn.BatchNorm2d(1280)
+            )
+            self.skip_connection = nn.Identity()
+
+        def forward(self, x):
+            identity = self.skip_connection(x)
+            out = self.conv_block(x)
+            out += identity
+            return nn.GELU()(out)
+
+    def __init__(self):
+        super(bkMlp_H, self).__init__()
+
+        self.residual_cnn = nn.Sequential(
+            nn.Conv2d(1280, 1280, 1),  # Reduction layer
+            nn.BatchNorm2d(1280),
+            nn.GELU(),
+            self.ResidualBlock(),
+        )
+
+        self.down = nn.Conv2d(1280, 1024, 1, bias=False)
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        print("bkMlpresdv2 _reset_parameters done")
+
+    def forward(self, bk_feat):
+        # Processing through residual CNN layers
+        out = self.residual_cnn(bk_feat)
+        out = self.down(out)
+
+        return out
+
+
+# bkMlpresdv2_g
+class bkMlp_g(nn.Module):
+    class ResidualBlock(nn.Module):
+        def __init__(self):
+            super(bkMlp_g.ResidualBlock, self).__init__()
+
+            self.conv_block = nn.Sequential(
+                nn.Conv2d(1408, 1408, 1, bias=False), nn.BatchNorm2d(1408)
+            )
+            self.skip_connection = nn.Identity()
+
+        def forward(self, x):
+            identity = self.skip_connection(x)
+            out = self.conv_block(x)
+            out += identity
+            return nn.GELU()(out)
+
+    def __init__(self):
+        super(bkMlp_g, self).__init__()
+
+        self.residual_cnn = nn.Sequential(
+            nn.Conv2d(1408, 1408, 1),  # Reduction layer
+            nn.BatchNorm2d(1408),
+            nn.GELU(),
+            self.ResidualBlock(),
+        )
+
+        self.down = nn.Conv2d(1408, 1024, 1, bias=False)
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        print("bkMlpresdv2 _reset_parameters done")
+
+    def forward(self, bk_feat):
+        # Processing through residual CNN layers
+        out = self.residual_cnn(bk_feat)
+        out = self.down(out)
+
+        return out
+
+
+# bkMlpresdv2_L
+class bkMlp_vggt(nn.Module):
+    class ResidualBlock(nn.Module):
+        def __init__(self):
+            super(bkMlp_vggt.ResidualBlock, self).__init__()
+
+            self.conv_block = nn.Sequential(
+                nn.Conv2d(1024, 1024, 1, bias=False), nn.BatchNorm2d(1024)
+            )
+            self.skip_connection = nn.Identity()
+
+        def forward(self, x):
+            identity = self.skip_connection(x)
+            out = self.conv_block(x)
+            out += identity
+            return nn.GELU()(out)
+
+    def __init__(self):
+        super(bkMlp_vggt, self).__init__()
+
+        self.residual_cnn = nn.Sequential(
+            nn.Conv2d(2048, 1024, 1),  # Reduction layer
+            nn.BatchNorm2d(1024),
+            nn.GELU(),
+            self.ResidualBlock(),
+        )
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        print("bkMlp_vggt _reset_parameters done")
+
+    def forward(self, bk_feat):
+        # Processing through residual CNN layers
+        out = self.residual_cnn(bk_feat)
+        return out
+
+
+# bkMlpv1
+class bkMlp_(nn.Module):
+    def __init__(self, dropout=0.0, **kwargs):
+        super().__init__()
+
+        self.mlp = nn.Sequential(
+            nn.Conv2d(1024, 1024, 1, bias=False),
+            nn.BatchNorm2d(1024),
+            nn.GELU(),
+        )
+
+        self.gelu = nn.GELU()
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        print("bkMlpv1 _reset_parameters done")
+
+    def forward(self, bk_feat):
+
+        out = self.mlp(bk_feat)
+
+        return out
+
+
+# bkMlpresdv1
+class bkMlp_(nn.Module):
+    class ResidualBlock(nn.Module):
+        def __init__(self):
+            super(bkMlp_.ResidualBlock, self).__init__()
+            self.conv_block = nn.Sequential(
+                nn.Conv2d(1024, 1024, 1, bias=False), nn.BatchNorm2d(1024)
+            )
+            self.skip_connection = nn.Identity()
+
+        def forward(self, x):
+            identity = self.skip_connection(x)
+            out = self.conv_block(x)
+            out += identity
+            return nn.GELU()(out)
+
+    def __init__(self):
+        super(bkMlp_, self).__init__()
+        self.residual_cnn = nn.Sequential(
+            self.ResidualBlock(),
+        )
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        print("bkMlpresdv1 _reset_parameters done")
+
+    def forward(self, bk_feat):
+        out = self.residual_cnn(bk_feat)
+        return out
+
+
+# bkMlpresdv2_B
+class bkMlp_(nn.Module):
+    class ResidualBlock(nn.Module):
+        def __init__(self):
+            super(bkMlp.ResidualBlock, self).__init__()
+
+            self.conv_block = nn.Sequential(
+                nn.Conv2d(768, 768, 1, bias=False), nn.BatchNorm2d(768)
+            )
+            self.skip_connection = nn.Identity()
+
+        def forward(self, x):
+            identity = self.skip_connection(x)
+            out = self.conv_block(x)
+            out += identity
+            return nn.GELU()(out)
+
+    def __init__(self):
+        super(bkMlp, self).__init__()
+
+        self.residual_cnn = nn.Sequential(
+            nn.Conv2d(768, 768, 1),  # Reduction layer
+            nn.BatchNorm2d(768),
+            nn.GELU(),
+            self.ResidualBlock(),
+        )
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        print("bkMlpresdv2 _reset_parameters done")
+
+    def forward(self, bk_feat):
+        # Processing through residual CNN layers
+        out = self.residual_cnn(bk_feat)
+        return out
+
+
+# bkMlpresdv2_G
+class bkMlp_(nn.Module):
+    class ResidualBlock(nn.Module):
+        def __init__(self):
+            super(bkMlp.ResidualBlock, self).__init__()
+
+            self.conv_block = nn.Sequential(
+                nn.Conv2d(1536, 1536, 1, bias=False), nn.BatchNorm2d(1536)
+            )
+            self.skip_connection = nn.Identity()
+
+        def forward(self, x):
+            identity = self.skip_connection(x)
+            out = self.conv_block(x)
+            out += identity
+            return nn.GELU()(out)
+
+    def __init__(self):
+        super(bkMlp, self).__init__()
+
+        self.residual_cnn = nn.Sequential(
+            nn.Conv2d(1536, 1536, 1),  # Reduction layer
+            nn.BatchNorm2d(1536),
+            nn.GELU(),
+            self.ResidualBlock(),
+        )
+
+        self.down = nn.Conv2d(1536, 1024, 1, bias=False)
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        print("bkMlpresdv2 _reset_parameters done")
+
+    def forward(self, bk_feat):
+        # Processing through residual CNN layers
+        out = self.residual_cnn(bk_feat)
+        out = self.down(out)
+
         return out
 
 
@@ -2837,6 +3512,8 @@ class PositionalEncoding1D(nn.Module):
         return emb[None, :, :].repeat(tensor.size(0), 1, 1)  # Expand to batch size
 
 
+# for Transformer
+# for ResidualAttentionBlock
 class LayerNorm(nn.LayerNorm):
     """Subclass torch's LayerNorm to handle fp16."""
 
@@ -2886,10 +3563,8 @@ def heat_show(cls_score, name, patch_size=27):
 
 
 # -----------------------------------------------------------------------------
-# Legacy trackers and experimental variants (override order retained)
+# PiVOT: visual-prompt fusion, feature shrinking and refinement
 # -----------------------------------------------------------------------------
-
-
 class test_fuse(nn.Module):
     def __init__(self, dropout=0.0, **kwargs):
         super().__init__()
@@ -3040,6 +3715,7 @@ class hint_test_feat_head(nn.Module):
         return out
 
 
+# PiVOT
 class TF_mlp(nn.Module):
     def __init__(self, dropout=0.0, **kwargs):
         super().__init__()
@@ -3078,742 +3754,3 @@ class TF_mlp(nn.Module):
         x = x.view(1, B, C, H, W)
 
         return x
-
-
-# bkMlpresdv2_H
-class bkMlp_H(nn.Module):
-    class ResidualBlock(nn.Module):
-        def __init__(self):
-            super(bkMlp_H.ResidualBlock, self).__init__()
-
-            self.conv_block = nn.Sequential(
-                nn.Conv2d(1280, 1280, 1, bias=False), nn.BatchNorm2d(1280)
-            )
-            self.skip_connection = nn.Identity()
-
-        def forward(self, x):
-            identity = self.skip_connection(x)
-            out = self.conv_block(x)
-            out += identity
-            return nn.GELU()(out)
-
-    def __init__(self):
-        super(bkMlp_H, self).__init__()
-
-        self.residual_cnn = nn.Sequential(
-            nn.Conv2d(1280, 1280, 1),  # Reduction layer
-            nn.BatchNorm2d(1280),
-            nn.GELU(),
-            self.ResidualBlock(),
-        )
-
-        self.down = nn.Conv2d(1280, 1024, 1, bias=False)
-
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        print("bkMlpresdv2 _reset_parameters done")
-
-    def forward(self, bk_feat):
-        # Processing through residual CNN layers
-        out = self.residual_cnn(bk_feat)
-        out = self.down(out)
-
-        return out
-
-
-# bkMlpresdv2_g
-class bkMlp_g(nn.Module):
-    class ResidualBlock(nn.Module):
-        def __init__(self):
-            super(bkMlp_g.ResidualBlock, self).__init__()
-
-            self.conv_block = nn.Sequential(
-                nn.Conv2d(1408, 1408, 1, bias=False), nn.BatchNorm2d(1408)
-            )
-            self.skip_connection = nn.Identity()
-
-        def forward(self, x):
-            identity = self.skip_connection(x)
-            out = self.conv_block(x)
-            out += identity
-            return nn.GELU()(out)
-
-    def __init__(self):
-        super(bkMlp_g, self).__init__()
-
-        self.residual_cnn = nn.Sequential(
-            nn.Conv2d(1408, 1408, 1),  # Reduction layer
-            nn.BatchNorm2d(1408),
-            nn.GELU(),
-            self.ResidualBlock(),
-        )
-
-        self.down = nn.Conv2d(1408, 1024, 1, bias=False)
-
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        print("bkMlpresdv2 _reset_parameters done")
-
-    def forward(self, bk_feat):
-        # Processing through residual CNN layers
-        out = self.residual_cnn(bk_feat)
-        out = self.down(out)
-
-        return out
-
-
-# bkMlpresdv2_L
-class bkMlp_vggt(nn.Module):
-    class ResidualBlock(nn.Module):
-        def __init__(self):
-            super(bkMlp_vggt.ResidualBlock, self).__init__()
-
-            self.conv_block = nn.Sequential(
-                nn.Conv2d(1024, 1024, 1, bias=False), nn.BatchNorm2d(1024)
-            )
-            self.skip_connection = nn.Identity()
-
-        def forward(self, x):
-            identity = self.skip_connection(x)
-            out = self.conv_block(x)
-            out += identity
-            return nn.GELU()(out)
-
-    def __init__(self):
-        super(bkMlp_vggt, self).__init__()
-
-        self.residual_cnn = nn.Sequential(
-            nn.Conv2d(2048, 1024, 1),  # Reduction layer
-            nn.BatchNorm2d(1024),
-            nn.GELU(),
-            self.ResidualBlock(),
-        )
-
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        print("bkMlp_vggt _reset_parameters done")
-
-    def forward(self, bk_feat):
-        # Processing through residual CNN layers
-        out = self.residual_cnn(bk_feat)
-        return out
-
-
-# Compatibility definition 1/3: Head_; last definition is exported.
-class Head_(nn.Module):
-    """Legacy head variant; repeated definitions retain their original override order."""
-
-    def __init__(
-        self,
-        filter_predictor,
-        feature_extractor,
-        classifier,
-        bb_regressor,
-        separate_filters_for_cls_and_bbreg=False,
-    ):
-        super().__init__()
-
-        self.filter_predictor = filter_predictor
-        self.feature_extractor = feature_extractor
-        self.classifier = classifier
-        self.bb_regressor = bb_regressor
-        self.separate_filters_for_cls_and_bbreg = separate_filters_for_cls_and_bbreg
-
-        self.permute = 1
-        print("Head_ToMP")
-
-    def forward(self, train_feat, test_feat, train_bb, *args, **kwargs):
-        assert train_bb.dim() == 3
-
-        num_sequences = train_bb.shape[1]
-
-        if train_feat.dim() == 5:
-            train_feat = train_feat.reshape(-1, *train_feat.shape[-3:])
-        if test_feat.dim() == 5:
-            test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
-
-        # ### note
-
-        # train_feat.shape 1 torch.Size([B,1024, h, w])
-        # test_feat.shape 1 torch.Size([B,1024, h, w])
-
-        # Extract features
-        train_feat = self.extract_head_feat(train_feat, num_sequences)
-        test_feat = self.extract_head_feat(test_feat, num_sequences)
-
-        # self.extract_head_feat -> pass by residual_bottleneck, 1024 -> 256
-
-        # train_feat.shape 3 torch.Size([2, 2, 256, h, w])
-        # test_feat.shape 3 torch.Size([1, 2, 256, h, w])
-
-        # Train filter
-        cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(
-            train_feat, test_feat, *args, **kwargs
-        )
-
-        # fuse encoder and decoder features to one feature map
-        target_scores = self.classifier(test_feat_enc, cls_filter)
-
-        # compute the final prediction using the output module
-        bbox_preds = self.bb_regressor(test_feat_enc, breg_filter)
-
-        return target_scores, bbox_preds
-
-    def extract_head_feat(self, feat, num_sequences=None):
-        """Extract classification features based on the input backbone features."""
-        if self.feature_extractor is None:
-
-            return feat
-        if num_sequences is None:
-
-            return self.feature_extractor(feat)
-
-        output = self.feature_extractor(feat)
-
-        return output.reshape(-1, num_sequences, *output.shape[-3:])
-
-    def get_filter_and_features(self, train_feat, test_feat, train_label, *args, **kwargs):
-
-        # feat:  Input feature maps. Dims (images_in_sequence, sequences, feat_dim, H, W).
-        if self.separate_filters_for_cls_and_bbreg:
-            cls_weights, bbreg_weights, test_feat_enc = self.filter_predictor(
-                train_feat, test_feat, train_label, *args, **kwargs
-            )
-        else:
-            weights, test_feat_enc = self.filter_predictor(
-                train_feat, test_feat, train_label, *args, **kwargs
-            )
-            cls_weights = bbreg_weights = weights
-
-        return cls_weights, bbreg_weights, test_feat_enc
-
-    def get_filter_and_features_in_parallel(
-        self, train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
-    ):
-
-        cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc = (
-            self.filter_predictor.predict_cls_bbreg_filters_parallel(
-                train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
-            )
-        )
-
-        return cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc
-
-
-# Compatibility definition 2/3: Head_; last definition is exported.
-class Head_(nn.Module):
-    """Legacy head variant; repeated definitions retain their original override order."""
-
-    def __init__(
-        self,
-        filter_predictor,
-        feature_extractor,
-        classifier,
-        bb_regressor,
-        separate_filters_for_cls_and_bbreg=False,
-    ):
-        super().__init__()
-
-        self.filter_predictor = filter_predictor
-        self.feature_extractor = feature_extractor
-        self.classifier = classifier
-        self.bb_regressor = bb_regressor
-        self.separate_filters_for_cls_and_bbreg = separate_filters_for_cls_and_bbreg
-
-        self.permute = 1
-
-        print("Head_JEPAs2")
-
-    def forward(
-        self,
-        train_feat,
-        test_feat,
-        train_bb,
-        JEPA_predictor_cls,
-        JEPA_predictor_breg,
-        auto_cast_full,
-        dtype,
-        infer_bf16,
-        *args,
-        **kwargs,
-    ):
-        assert train_bb.dim() == 3
-
-        num_sequences = train_bb.shape[1]
-
-        if train_feat.dim() == 5:
-            train_feat = train_feat.reshape(-1, *train_feat.shape[-3:])
-        if test_feat.dim() == 5:
-            test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
-
-        # ### note
-
-        # train_feat.shape 1 torch.Size([B,1024, h, w])
-        # test_feat.shape 1 torch.Size([B,1024, h, w])
-
-        # Extract features
-        train_feat = self.extract_head_feat(train_feat, num_sequences)
-        test_feat = self.extract_head_feat(test_feat, num_sequences)
-
-        # self.extract_head_feat -> pass by residual_bottleneck, 1024 -> 256
-
-        # train_feat.shape 3 torch.Size([2, 2, 256, h, w])
-        # test_feat.shape 3 torch.Size([1, 2, 256, h, w])
-
-        # Train filter
-
-        # cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(train_feat, test_feat, *args, **kwargs)
-        cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(
-            auto_cast_full, dtype, infer_bf16, train_feat, test_feat, *args, **kwargs
-        )
-
-        cls_filter = JEPA_predictor_cls(cls_filter)
-        breg_filter = JEPA_predictor_breg(breg_filter)
-
-        # fuse encoder and decoder features to one feature map
-        target_scores = self.classifier(test_feat_enc, cls_filter)
-
-        # compute the final prediction using the output module
-        bbox_preds = self.bb_regressor(test_feat_enc, breg_filter)
-
-        return target_scores, bbox_preds
-
-    def extract_head_feat(self, feat, num_sequences=None):
-        """Extract classification features based on the input backbone features."""
-        if self.feature_extractor is None:
-
-            return feat
-        if num_sequences is None:
-
-            return self.feature_extractor(feat)
-
-        output = self.feature_extractor(feat)
-
-        return output.reshape(-1, num_sequences, *output.shape[-3:])
-
-    # def get_filter_and_features(self, train_feat, test_feat, train_label, *args, **kwargs):
-    def get_filter_and_features(
-        self,
-        auto_cast_full,
-        dtype,
-        infer_bf16,
-        train_feat,
-        test_feat,
-        train_label,
-        *args,
-        **kwargs,
-    ):
-
-        if (auto_cast_full and self.training) or (auto_cast_full and infer_bf16):
-            with torch.cuda.amp.autocast(dtype=dtype):
-                # feat:  Input feature maps. Dims (images_in_sequence, sequences, feat_dim, H, W).
-                if self.separate_filters_for_cls_and_bbreg:
-                    cls_weights, bbreg_weights, test_feat_enc = self.filter_predictor(
-                        train_feat, test_feat, train_label, *args, **kwargs
-                    )
-                else:
-                    weights, test_feat_enc = self.filter_predictor(
-                        train_feat, test_feat, train_label, *args, **kwargs
-                    )
-                    cls_weights = bbreg_weights = weights
-        else:
-            # feat:  Input feature maps. Dims (images_in_sequence, sequences, feat_dim, H, W).
-            if self.separate_filters_for_cls_and_bbreg:
-                cls_weights, bbreg_weights, test_feat_enc = self.filter_predictor(
-                    train_feat, test_feat, train_label, *args, **kwargs
-                )
-            else:
-                weights, test_feat_enc = self.filter_predictor(
-                    train_feat, test_feat, train_label, *args, **kwargs
-                )
-                cls_weights = bbreg_weights = weights
-
-        return cls_weights, bbreg_weights, test_feat_enc
-
-    def get_filter_and_features_in_parallel(
-        self, train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
-    ):
-
-        print("self.net.auto_cast_full", self.net.auto_cast_full)
-
-        if (self.net.auto_cast_full and self.training) or (
-            self.net.auto_cast_full and self.infer_bf16
-        ):
-            with torch.cuda.amp.autocast(dtype=self.net.dtype):
-                cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc = (
-                    self.filter_predictor.predict_cls_bbreg_filters_parallel(
-                        train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
-                    )
-                )
-        else:
-            cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc = (
-                self.filter_predictor.predict_cls_bbreg_filters_parallel(
-                    train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
-                )
-            )
-
-        return cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc
-
-
-# Compatibility definition 3/3: Head_; last definition is exported.
-class Head_(nn.Module):
-    """Legacy head variant; repeated definitions retain their original override order."""
-
-    def __init__(
-        self,
-        filter_predictor,
-        feature_extractor,
-        classifier,
-        bb_regressor,
-        separate_filters_for_cls_and_bbreg=False,
-    ):
-        super().__init__()
-
-        self.filter_predictor = filter_predictor
-        self.feature_extractor = feature_extractor
-        self.classifier = classifier
-        self.bb_regressor = bb_regressor
-        self.separate_filters_for_cls_and_bbreg = separate_filters_for_cls_and_bbreg
-
-        self.TFwPTT = False  # testFeat_w_PTfeat # train auxPTcurloss2x2
-        # self.TFwPTT = True   # testFeat_w_PTtrack # infer  # train auxPTcurloss2x2_TFwPTT1_hclsw_s40
-
-        print("self.TFwPTT Head init", self.TFwPTT)
-
-        self.PT_cur_TEnc = True
-        # self.PT_cur_TEnc = False
-
-        self.PTAttadd = True
-        # self.PTAttadd = False
-
-        print("self.PT_cur_TEnc", self.PT_cur_TEnc)
-
-        print("tompnet_GOTPT_JEPA_s2")
-
-    def forward(
-        self,
-        train_feat,
-        test_feat,
-        train_bb,
-        test_tracks_transformed,
-        PTrackAttentionModel,
-        JEPA_predictor_cls,
-        JEPA_predictor_breg,
-        # TF_mlp,
-        *args,
-        **kwargs,
-    ):
-
-        assert train_bb.dim() == 3
-
-        num_sequences = train_bb.shape[1]
-
-        if train_feat.dim() == 5:
-            train_feat = train_feat.reshape(-1, *train_feat.shape[-3:])
-        if test_feat.dim() == 5:
-            test_feat = test_feat.reshape(-1, *test_feat.shape[-3:])
-
-        # Extract features
-        train_feat = self.extract_head_feat(train_feat, num_sequences)
-        test_feat = self.extract_head_feat(test_feat, num_sequences)
-
-        if self.PT_cur_TEnc and self.PTAttadd:
-            test_feat_ori = test_feat.clone()
-
-        if self.PT_cur_TEnc:
-            test_feat = PTrackAttentionModel(test_tracks_transformed, test_feat, self.TFwPTT)
-
-        if self.PT_cur_TEnc and self.PTAttadd:
-            test_feat = test_feat_ori + test_feat
-
-        # Train filter
-        cls_filter, breg_filter, test_feat_enc = self.get_filter_and_features(
-            train_feat, test_feat, *args, **kwargs
-        )
-
-        # TFEaddTF
-        # test_feat_enc = test_feat_enc + TF_mlp(test_feat)
-
-        cls_filter_p = JEPA_predictor_cls(cls_filter)
-        breg_filter_p = JEPA_predictor_breg(breg_filter)
-
-        # fuse encoder and decoder features to one feature map
-        target_scores = self.classifier(test_feat_enc, cls_filter_p)
-
-        # heat_show(target_scores[0][0], "target_scores[0][0]")
-
-        # compute the final prediction using the output module
-        bbox_preds = self.bb_regressor(test_feat_enc, breg_filter_p)
-
-        return target_scores, bbox_preds
-
-    def extract_head_feat(self, feat, num_sequences=None):
-        """Extract classification features based on the input backbone features."""
-        if self.feature_extractor is None:
-
-            return feat
-        if num_sequences is None:
-
-            return self.feature_extractor(feat)
-
-        output = self.feature_extractor(feat)
-
-        return output.reshape(-1, num_sequences, *output.shape[-3:])
-
-    def get_filter_and_features(self, train_feat, test_feat, train_label, *args, **kwargs):
-
-        # feat:  Input feature maps. Dims (images_in_sequence, sequences, feat_dim, H, W).
-        if self.separate_filters_for_cls_and_bbreg:
-            cls_weights, bbreg_weights, test_feat_enc = self.filter_predictor(
-                train_feat, test_feat, train_label, *args, **kwargs
-            )
-        else:
-            weights, test_feat_enc = self.filter_predictor(
-                train_feat, test_feat, train_label, *args, **kwargs
-            )
-            cls_weights = bbreg_weights = weights
-
-        return cls_weights, bbreg_weights, test_feat_enc
-
-    def get_filter_and_features_in_parallel(
-        self, train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
-    ):
-
-        cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc = (
-            self.filter_predictor.predict_cls_bbreg_filters_parallel(
-                train_feat, test_feat, train_label, num_gth_frames, *args, **kwargs
-            )
-        )
-
-        return cls_weights, bbreg_weights, cls_test_feat_enc, bbreg_test_feat_enc
-
-
-# Compatibility definition 1/4: bkMlp_; last definition is exported.
-# bkMlpv1
-class bkMlp_(nn.Module):
-    def __init__(self, dropout=0.0, **kwargs):
-        super().__init__()
-
-        self.mlp = nn.Sequential(
-            nn.Conv2d(1024, 1024, 1, bias=False),
-            nn.BatchNorm2d(1024),
-            nn.GELU(),
-        )
-
-        self.gelu = nn.GELU()
-
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        print("bkMlpv1 _reset_parameters done")
-
-    def forward(self, bk_feat):
-
-        out = self.mlp(bk_feat)
-
-        return out
-
-
-# Compatibility definition 2/4: bkMlp_; last definition is exported.
-# bkMlpresdv1
-class bkMlp_(nn.Module):
-    class ResidualBlock(nn.Module):
-        def __init__(self):
-            super(bkMlp_.ResidualBlock, self).__init__()
-            self.conv_block = nn.Sequential(
-                nn.Conv2d(1024, 1024, 1, bias=False), nn.BatchNorm2d(1024)
-            )
-            self.skip_connection = nn.Identity()
-
-        def forward(self, x):
-            identity = self.skip_connection(x)
-            out = self.conv_block(x)
-            out += identity
-            return nn.GELU()(out)
-
-    def __init__(self):
-        super(bkMlp_, self).__init__()
-        self.residual_cnn = nn.Sequential(
-            self.ResidualBlock(),
-        )
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        print("bkMlpresdv1 _reset_parameters done")
-
-    def forward(self, bk_feat):
-        out = self.residual_cnn(bk_feat)
-        return out
-
-
-# Compatibility definition 3/4: bkMlp_; last definition is exported.
-
-
-# bkMlpresdv2_B
-class bkMlp_(nn.Module):
-    class ResidualBlock(nn.Module):
-        def __init__(self):
-            super(bkMlp.ResidualBlock, self).__init__()
-
-            self.conv_block = nn.Sequential(
-                nn.Conv2d(768, 768, 1, bias=False), nn.BatchNorm2d(768)
-            )
-            self.skip_connection = nn.Identity()
-
-        def forward(self, x):
-            identity = self.skip_connection(x)
-            out = self.conv_block(x)
-            out += identity
-            return nn.GELU()(out)
-
-    def __init__(self):
-        super(bkMlp, self).__init__()
-
-        self.residual_cnn = nn.Sequential(
-            nn.Conv2d(768, 768, 1),  # Reduction layer
-            nn.BatchNorm2d(768),
-            nn.GELU(),
-            self.ResidualBlock(),
-        )
-
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        print("bkMlpresdv2 _reset_parameters done")
-
-    def forward(self, bk_feat):
-        # Processing through residual CNN layers
-        out = self.residual_cnn(bk_feat)
-        return out
-
-
-# Compatibility definition 4/4: bkMlp_; last definition is exported.
-# bkMlpresdv2_G
-class bkMlp_(nn.Module):
-    class ResidualBlock(nn.Module):
-        def __init__(self):
-            super(bkMlp.ResidualBlock, self).__init__()
-
-            self.conv_block = nn.Sequential(
-                nn.Conv2d(1536, 1536, 1, bias=False), nn.BatchNorm2d(1536)
-            )
-            self.skip_connection = nn.Identity()
-
-        def forward(self, x):
-            identity = self.skip_connection(x)
-            out = self.conv_block(x)
-            out += identity
-            return nn.GELU()(out)
-
-    def __init__(self):
-        super(bkMlp, self).__init__()
-
-        self.residual_cnn = nn.Sequential(
-            nn.Conv2d(1536, 1536, 1),  # Reduction layer
-            nn.BatchNorm2d(1536),
-            nn.GELU(),
-            self.ResidualBlock(),
-        )
-
-        self.down = nn.Conv2d(1536, 1024, 1, bias=False)
-
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        print("bkMlpresdv2 _reset_parameters done")
-
-    def forward(self, bk_feat):
-        # Processing through residual CNN layers
-        out = self.residual_cnn(bk_feat)
-        out = self.down(out)
-
-        return out
-
-
-# Compatibility definition 1/2: TFEcatmlp_; last definition is exported.
-# TFEcatmlp_v1
-class TFEcatmlp_(nn.Module):
-    def __init__(self, dropout=0.0, **kwargs):
-        super().__init__()
-
-        self.mlp = nn.Sequential(
-            nn.Conv2d(256 * 2, 256, 1, bias=False),
-            nn.BatchNorm2d(256),
-            nn.GELU(),
-        )
-
-        self.gelu = nn.GELU()
-
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        print("TFEcatmlp_v1 _reset_parameters done")
-
-    def forward(self, bk_feat):
-
-        out = self.mlp(bk_feat)
-
-        return out
-
-
-# Compatibility definition 2/2: TFEcatmlp_; last definition is exported.
-# TFEcatmlpconv3bt
-class TFEcatmlp_(nn.Module):
-    def __init__(self, dropout=0.0, **kwargs):
-        super().__init__()
-
-        self.mlp = nn.Sequential(
-            nn.Conv2d(256 * 2, 256, kernel_size=3, padding=1),
-            # nn.Conv2d(256*2, 256, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(256),
-            nn.GELU(),
-        )
-
-        self.gelu = nn.GELU()
-
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        print("TFEcatmlpconv3 _reset_parameters done")
-
-    def forward(self, bk_feat):
-
-        out = self.mlp(bk_feat)
-
-        return out
-
-
-# while True:
-#     try:
-
-#     except:
