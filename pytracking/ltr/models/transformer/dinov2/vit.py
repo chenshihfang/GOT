@@ -1,11 +1,8 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-
 # This source code is licensed under the Apache License, Version 2.0
 # found in the LICENSE file in the root directory of this source tree.
-
 """Legacy DINOv2 vision transformer, window attention and patch embedding.
 
 Images use (B, C, H, W); transformer tokens use (B, N, C).
@@ -316,40 +313,32 @@ class WindowedAttention(nn.Module):
 #         self.num_heads = num_heads
 #         head_dim = dim // num_heads
 #         self.scale = head_dim ** -0.5
-
 #         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
 #         self.attn_drop = nn.Dropout(attn_drop)
 #         self.proj = nn.Linear(dim, dim)
 #         self.proj_drop = nn.Dropout(proj_drop)
 #         self.window_size = window_size
 #         self.pad_mode = pad_mode
-
 #     def forward(self, x, H, W):
 #         B, N, C = x.shape
-
 #         N_ = self.window_size * self.window_size
 #         H_ = math.ceil(H / self.window_size) * self.window_size
 #         W_ = math.ceil(W / self.window_size) * self.window_size
 #         x = x.view(B, H, W, C)
 #         x = F.pad(x, [0, 0, 0, W_ - W, 0, H_- H], mode=self.pad_mode)
-
 #         x = window_partition(x, window_size=self.window_size)# nW*B, window_size, window_size, C
 #         x = x.view(-1, N_, C)
-
 #         qkv = self.qkv(x).view(-1, N_, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
 #         q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)
 #         attn = (q @ k.transpose(-2, -1)) * self.scale # [B, L, num_head, N_, N_]
 #         attn = attn.softmax(dim=-1)
 #         attn = self.attn_drop(attn) # [B, L, num_head, N_, N_]
 #         x = (attn @ v).transpose(1, 2).reshape(-1, self.window_size, self.window_size, C)
-
 #         x = window_reverse(x, self.window_size, H_, W_)
 #         x = x[:, :H, :W, :].reshape(B, N, C).contiguous()
 #         x = self.proj(x)
 #         x = self.proj_drop(x)
 #         return x
-
-
 class Block(nn.Module):
     def __init__(
         self,

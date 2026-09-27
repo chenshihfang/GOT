@@ -1,11 +1,8 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-
 # This source code is licensed under the Apache License, Version 2.0
 # found in the LICENSE file in the root directory of this source tree.
-
 """Legacy DINOv2 adapter components and multiscale feature interactions.
 
 Spatial maps use (B, C, H, W); attention tokens use (B, N, C).
