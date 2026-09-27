@@ -1,638 +1,44 @@
+# The core code logic was originally implemented by a human developer.
+# Codex was used for post-publication refactoring, cleanup, and code quality improvements.
+
+"""Training actors for GOT-Edit, GOT-JEPA, ToMP/DiMP and legacy trackers.
+
+The shared ToMPActor is listed first because GOT-Edit uses it directly.
+Actor names and loss/statistic keys are retained for existing training setups.
+Tensor notation: T = frames, B = sequences, C = channels, H/W = spatial size.
+Image batches use (T, B, 3, H, W); boxes use (T, B, 4) in (x, y, w, h) order.
+"""
+
 from . import BaseActor
 import torch
 import torch.nn.functional as F
 
-class DiMPActor_clip(BaseActor):
-    """Actor for training the DiMP network."""
+
+# -----------------------------------------------------------------------------
+# GOT-Edit (also shared by GOT-JEPA and ToMP training)
+# -----------------------------------------------------------------------------
+
+
+# train stage 1
+class ToMPActor(BaseActor):
+    """GOT-Edit training actor, also shared by ToMP and GOT-JEPA finetuning."""
+
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
         if loss_weight is None:
-            loss_weight = {'iou': 1.0, 'test_clf': 1.0}
+            loss_weight = {"bb_ce": 1.0}
         self.loss_weight = loss_weight
-
-    def __call__(self, data):
-        """
-        args:
-            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
-                    'test_proposals', 'proposal_iou' and 'test_label'.
-        returns:
-            loss    - the training loss
-            stats  -  dict containing detailed losses
-        """
-        # Run network
-        target_scores, iou_pred = self.net(train_imgs=data['train_images'],
-                                           test_imgs=data['test_images'],
-                                           train_bb=data['train_anno'],
-                                           test_proposals=data['test_proposals'])
-
-        # Classification losses for the different optimization iterations
-        clf_losses_test = [self.objective['test_clf'](s, data['test_label'], data['test_anno']) for s in target_scores]
-
-        # Compute loss for ATOM IoUNet
-        loss_iou = self.loss_weight['iou'] * self.objective['iou'](iou_pred, data['proposal_iou'])
-
-        # Loss Clf :a aaa a-1 dclip fuse
-
-        # Loss for the initial filter iteration
-        loss_test_init_clf = 0
-        loss_test_init_clf = self.loss_weight['test_init_clf'] * clf_losses_test[0]
-
-        # Loss for the intermediate filter iterations
-        loss_test_iter_clf = 0
-        test_iter_weights = self.loss_weight['test_iter_clf']
-
-        if isinstance(test_iter_weights, list):
-            loss_test_iter_clf = sum([a*b for a, b in zip(test_iter_weights, clf_losses_test[1:-3])]) 
-        else:
-            loss_test_iter_clf = (test_iter_weights / (len(clf_losses_test) - 4)) * sum(clf_losses_test[1:-3])
-
-        # Loss of the final dimp filter
-        loss_test_final_dimp_clf = 0
-        clf_loss_test_final_dimp = clf_losses_test[-3]
-        loss_test_final_dimp_clf = self.loss_weight['test_final_dimp_clf'] * clf_loss_test_final_dimp
-
-        # Loss of the dclip_clf
-        loss_test_dclip_clf = 0
-        clf_target_dclip_classifier_test = clf_losses_test[-2]
-        loss_test_dclip_clf = self.loss_weight['test_dclip_clf'] * clf_target_dclip_classifier_test
-
-        # Loss of the final filter fuse_dclip_clf
-        loss_target_classifier = 0
-        clf_loss_test = clf_losses_test[-1]
-        loss_target_classifier = self.loss_weight['test_clf'] * clf_loss_test
-
-        ###
-
-        # Total loss
-        loss = loss_iou + loss_test_init_clf + loss_test_iter_clf + loss_test_final_dimp_clf + loss_test_dclip_clf + loss_target_classifier
-
-        # Log stats
-        stats = {'Loss/total': loss.item(),
-                 'Loss/iou': loss_iou.item(),
-                 'Loss/target_clf': loss_target_classifier.item()}
-
-        if 'test_init_clf' in self.loss_weight.keys():
-            stats['Loss/test_init_clf'] = loss_test_init_clf.item()
-        if 'test_iter_clf' in self.loss_weight.keys():
-            stats['Loss/test_iter_clf'] = loss_test_iter_clf.item()
-        if 'test_final_dimp_clf' in self.loss_weight.keys():
-            stats['Loss/test_final_dimp_clf'] = loss_test_final_dimp_clf.item()
-        if 'test_dclip_clf' in self.loss_weight.keys():
-            stats['Loss/test_dclip_clf'] = loss_test_dclip_clf.item()
-
-        stats['ClfTrain/test_loss'] = clf_loss_test.item()
-        if len(clf_losses_test) > 0:
-            stats['ClfTrain/test_init_loss'] = clf_losses_test[0].item()
-            if len(clf_losses_test) > 2:
-                stats['ClfTrain/test_iter_loss'] = sum(clf_losses_test[1:-1]).item() / (len(clf_losses_test) - 2)
-
-        return loss, stats
-
-class DiMPActor(BaseActor):
-    """Actor for training the DiMP network."""
-    def __init__(self, net, objective, loss_weight=None):
-        super().__init__(net, objective)
-        if loss_weight is None:
-            loss_weight = {'iou': 1.0, 'test_clf': 1.0}
-        self.loss_weight = loss_weight
-
-    def __call__(self, data):
-        """
-        args:
-            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
-                    'test_proposals', 'proposal_iou' and 'test_label'.
-        returns:
-            loss    - the training loss
-            stats  -  dict containing detailed losses
-        """
-        # Run network
-        target_scores, iou_pred = self.net(train_imgs=data['train_images'],
-                                           test_imgs=data['test_images'],
-                                           train_bb=data['train_anno'],
-                                           test_proposals=data['test_proposals'])
-
-        # Classification losses for the different optimization iterations
-        clf_losses_test = [self.objective['test_clf'](s, data['test_label'], data['test_anno']) for s in target_scores]
-
-        # Loss of the final filter
-        clf_loss_test = clf_losses_test[-1]
-        loss_target_classifier = self.loss_weight['test_clf'] * clf_loss_test
-
-        # Compute loss for ATOM IoUNet
-        loss_iou = self.loss_weight['iou'] * self.objective['iou'](iou_pred, data['proposal_iou'])
-
-        ### omit when mlp only dclip
-        # Loss for the initial filter iteration
-        loss_test_init_clf = 0
-        if 'test_init_clf' in self.loss_weight.keys():
-            loss_test_init_clf = self.loss_weight['test_init_clf'] * clf_losses_test[0]
-
-        # Loss for the intermediate filter iterations
-        loss_test_iter_clf = 0
-        if 'test_iter_clf' in self.loss_weight.keys():
-            test_iter_weights = self.loss_weight['test_iter_clf']
-            if isinstance(test_iter_weights, list):
-                loss_test_iter_clf = sum([a*b for a, b in zip(test_iter_weights, clf_losses_test[1:-1])])
-            else:
-                loss_test_iter_clf = (test_iter_weights / (len(clf_losses_test) - 2)) * sum(clf_losses_test[1:-1])
-        ###
-
-        ### dclip note
-        # print("len(target_scores) 3", len(target_scores))
-        # print("len(target_scores)", len(target_scores)) # 3
-        # print("target_scores[0].shape", target_scores[0].shape) # [3,4,19,19]
-        # print("data['test_label'].shape", data['test_label'].shape) # [3,4,19,19]
-        # print("data['test_anno'].shape", data['test_anno'].shape) # [3,4,4]
-
-        # print("data['test_label']", data['test_label']) # cls map label
-        # input()
-
-        # print("data['test_anno']", data['test_anno']) # regression coors label
-        # input()
-
-        # print("target_scores[0] 1", target_scores[0]) # dclip init
-        # input()
-
-        ### use when mlp only dclip
-        # loss_test_init_clf = 0
-        # loss_test_iter_clf = 0
-        ###
-        
-        ### dclip
-
-        # Total loss
-        loss = loss_iou + loss_target_classifier + loss_test_init_clf + loss_test_iter_clf
-
-        # Log stats
-        stats = {'Loss/total': loss.item(),
-                 'Loss/iou': loss_iou.item(),
-                 'Loss/target_clf': loss_target_classifier.item()}
-
-        ### omit when mlp only dclip
-        if 'test_init_clf' in self.loss_weight.keys():
-            stats['Loss/test_init_clf'] = loss_test_init_clf.item()
-        if 'test_iter_clf' in self.loss_weight.keys():
-            stats['Loss/test_iter_clf'] = loss_test_iter_clf.item()
-        ### omit when mlp only dclip
-
-        stats['ClfTrain/test_loss'] = clf_loss_test.item()
-        if len(clf_losses_test) > 0:
-            stats['ClfTrain/test_init_loss'] = clf_losses_test[0].item()
-            if len(clf_losses_test) > 2:
-                stats['ClfTrain/test_iter_loss'] = sum(clf_losses_test[1:-1]).item() / (len(clf_losses_test) - 2)
-
-        return loss, stats
-
-
-class KLDiMPActor(BaseActor):
-    """Actor for training the DiMP network."""
-    def __init__(self, net, objective, loss_weight=None):
-        super().__init__(net, objective)
-        if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
-        self.loss_weight = loss_weight
-
-    def __call__(self, data):
-        """
-        args:
-            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
-                    'test_proposals', 'proposal_iou' and 'test_label'.
-        returns:
-            loss    - the training loss
-            stats  -  dict containing detailed losses
-        """
-        # Run network
-        target_scores, bb_scores = self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            test_proposals=data['test_proposals'])
-
-        # Reshape bb reg variables
-        is_valid = data['test_anno'][:, :, 0] < 99999.0
-        bb_scores = bb_scores[is_valid, :]
-        proposal_density = data['proposal_density'][is_valid, :]
-        gt_density = data['gt_density'][is_valid, :]
-
-        # Compute loss
-        bb_ce = self.objective['bb_ce'](bb_scores, sample_density=proposal_density, gt_density=gt_density, mc_dim=1)
-        loss_bb_ce = self.loss_weight['bb_ce'] * bb_ce
-
-        # If standard DiMP classifier is used
-        loss_target_classifier = 0
-        loss_test_init_clf = 0
-        loss_test_iter_clf = 0
-        if 'test_clf' in self.loss_weight.keys():
-            # Classification losses for the different optimization iterations
-            clf_losses_test = [self.objective['test_clf'](s, data['test_label'], data['test_anno']) for s in target_scores]
-
-            # Loss of the final filter
-            clf_loss_test = clf_losses_test[-1]
-            loss_target_classifier = self.loss_weight['test_clf'] * clf_loss_test
-
-            # Loss for the initial filter iteration
-            if 'test_init_clf' in self.loss_weight.keys():
-                loss_test_init_clf = self.loss_weight['test_init_clf'] * clf_losses_test[0]
-
-            # Loss for the intermediate filter iterations
-            if 'test_iter_clf' in self.loss_weight.keys():
-                test_iter_weights = self.loss_weight['test_iter_clf']
-                if isinstance(test_iter_weights, list):
-                    loss_test_iter_clf = sum([a * b for a, b in zip(test_iter_weights, clf_losses_test[1:-1])])
-                else:
-                    loss_test_iter_clf = (test_iter_weights / (len(clf_losses_test) - 2)) * sum(clf_losses_test[1:-1])
-
-        # If PrDiMP classifier is used
-        loss_clf_ce = 0
-        loss_clf_ce_init = 0
-        loss_clf_ce_iter = 0
-        if 'clf_ce' in self.loss_weight.keys():
-            # Classification losses for the different optimization iterations
-            clf_ce_losses = [self.objective['clf_ce'](s, data['test_label_density'], grid_dim=(-2,-1)) for s in target_scores]
-
-            # Loss of the final filter
-            clf_ce = clf_ce_losses[-1]
-            loss_clf_ce = self.loss_weight['clf_ce'] * clf_ce
-
-            # Loss for the initial filter iteration
-            if 'clf_ce_init' in self.loss_weight.keys():
-                loss_clf_ce_init = self.loss_weight['clf_ce_init'] * clf_ce_losses[0]
-
-            # Loss for the intermediate filter iterations
-            if 'clf_ce_iter' in self.loss_weight.keys() and len(clf_ce_losses) > 2:
-                test_iter_weights = self.loss_weight['clf_ce_iter']
-                if isinstance(test_iter_weights, list):
-                    loss_clf_ce_iter = sum([a * b for a, b in zip(test_iter_weights, clf_ce_losses[1:-1])])
-                else:
-                    loss_clf_ce_iter = (test_iter_weights / (len(clf_ce_losses) - 2)) * sum(clf_ce_losses[1:-1])
-
-        # Total loss
-        loss = loss_bb_ce + loss_clf_ce + loss_clf_ce_init + loss_clf_ce_iter + \
-                            loss_target_classifier + loss_test_init_clf + loss_test_iter_clf
-
-        if torch.isinf(loss) or torch.isnan(loss):
-            raise Exception('ERROR: Loss was nan or inf!!!')
-
-        # Log stats
-        stats = {'Loss/total': loss.item(),
-                 'Loss/bb_ce': bb_ce.item(),
-                 'Loss/loss_bb_ce': loss_bb_ce.item()}
-        if 'test_clf' in self.loss_weight.keys():
-            stats['Loss/target_clf'] = loss_target_classifier.item()
-        if 'test_init_clf' in self.loss_weight.keys():
-            stats['Loss/test_init_clf'] = loss_test_init_clf.item()
-        if 'test_iter_clf' in self.loss_weight.keys():
-            stats['Loss/test_iter_clf'] = loss_test_iter_clf.item()
-        if 'clf_ce' in self.loss_weight.keys():
-            stats['Loss/clf_ce'] = loss_clf_ce.item()
-        if 'clf_ce_init' in self.loss_weight.keys():
-            stats['Loss/clf_ce_init'] = loss_clf_ce_init.item()
-        if 'clf_ce_iter' in self.loss_weight.keys() and len(clf_ce_losses) > 2:
-            stats['Loss/clf_ce_iter'] = loss_clf_ce_iter.item()
-
-        if 'test_clf' in self.loss_weight.keys():
-            stats['ClfTrain/test_loss'] = clf_loss_test.item()
-            if len(clf_losses_test) > 0:
-                stats['ClfTrain/test_init_loss'] = clf_losses_test[0].item()
-                if len(clf_losses_test) > 2:
-                    stats['ClfTrain/test_iter_loss'] = sum(clf_losses_test[1:-1]).item() / (len(clf_losses_test) - 2)
-
-        if 'clf_ce' in self.loss_weight.keys():
-            stats['ClfTrain/clf_ce'] = clf_ce.item()
-            if len(clf_ce_losses) > 0:
-                stats['ClfTrain/clf_ce_init'] = clf_ce_losses[0].item()
-                if len(clf_ce_losses) > 2:
-                    stats['ClfTrain/clf_ce_iter'] = sum(clf_ce_losses[1:-1]).item() / (len(clf_ce_losses) - 2)
-
-        return loss, stats
-
-
-class KYSActor(BaseActor):
-    """ Actor for training KYS model """
-    def __init__(self, net, objective, loss_weight=None, dimp_jitter_fn=None):
-        super().__init__(net, objective)
-        self.loss_weight = loss_weight
-
-        self.dimp_jitter_fn = dimp_jitter_fn
-
-        # TODO set it somewhere
-        self.device = torch.device("cuda:0")
-
-    def __call__(self, data):
-        sequence_length = data['test_images'].shape[0]
-        num_sequences = data['test_images'].shape[1]
-
-        valid_samples = data['test_valid_image'].to(self.device)
-        test_visibility = data['test_visible_ratio'].to(self.device)
-
-        # Initialize loss variables
-        clf_loss_test_all = torch.zeros(num_sequences, sequence_length - 1).to(self.device)
-        clf_loss_test_orig_all = torch.zeros(num_sequences, sequence_length - 1).to(self.device)
-        dimp_loss_test_all = torch.zeros(num_sequences, sequence_length - 1).to(self.device)
-        test_clf_acc = 0
-        dimp_clf_acc = 0
-
-        test_tracked_correct = torch.zeros(num_sequences, sequence_length - 1).long().to(self.device)
-        test_seq_all_correct = torch.ones(num_sequences).to(self.device)
-        dimp_seq_all_correct = torch.ones(num_sequences).to(self.device)
-
-        is_target_loss_all = torch.zeros(num_sequences, sequence_length - 1).to(self.device)
-        is_target_after_prop_loss_all = torch.zeros(num_sequences, sequence_length - 1).to(self.device)
-
-        # Initialize target model using the training frames
-        train_images = data['train_images'].to(self.device)
-        train_anno = data['train_anno'].to(self.device)
-        dimp_filters = self.net.train_classifier(train_images, train_anno)
-
-        # Track in the first test frame
-        test_image_cur = data['test_images'][0, ...].to(self.device)
-        backbone_feat_prev_all = self.net.extract_backbone_features(test_image_cur)
-        backbone_feat_prev = backbone_feat_prev_all[self.net.classification_layer]
-        backbone_feat_prev = backbone_feat_prev.view(1, num_sequences, -1,
-                                                     backbone_feat_prev.shape[-2], backbone_feat_prev.shape[-1])
-
-        if self.net.motion_feat_extractor is not None:
-            motion_feat_prev = self.net.motion_feat_extractor(backbone_feat_prev_all).view(1, num_sequences, -1,
-                                                                                           backbone_feat_prev.shape[-2],
-                                                                                           backbone_feat_prev.shape[-1])
-        else:
-            motion_feat_prev = backbone_feat_prev
-
-        dimp_scores_prev = self.net.dimp_classifier.track_frame(dimp_filters, backbone_feat_prev)
-
-        # Remove last row and col (added due to even kernel size in the target model)
-        dimp_scores_prev = dimp_scores_prev[:, :, :-1, :-1].contiguous()
-
-        # Set previous frame information
-        label_prev = data['test_label'][0:1, ...].to(self.device)
-        label_prev = label_prev[:, :, :-1, :-1].contiguous()
-
-        anno_prev = data['test_anno'][0:1, ...].to(self.device)
-        state_prev = None
-
-        is_valid_prev = valid_samples[0, :].view(1, -1, 1, 1).byte()
-
-        # Loop over the sequence
-        for i in range(1, sequence_length):
-            test_image_cur = data['test_images'][i, ...].to(self.device)
-            test_label_cur = data['test_label'][i:i+1, ...].to(self.device)
-            test_label_cur = test_label_cur[:, :, :-1, :-1].contiguous()
-
-            test_anno_cur = data['test_anno'][i:i + 1, ...].to(self.device)
-
-            # Extract features
-            backbone_feat_cur_all = self.net.extract_backbone_features(test_image_cur)
-            backbone_feat_cur = backbone_feat_cur_all[self.net.classification_layer]
-            backbone_feat_cur = backbone_feat_cur.view(1, num_sequences, -1,
-                                                       backbone_feat_cur.shape[-2], backbone_feat_cur.shape[-1])
-
-            if self.net.motion_feat_extractor is not None:
-                motion_feat_cur = self.net.motion_feat_extractor(backbone_feat_cur_all).view(1, num_sequences, -1,
-                                                                                             backbone_feat_cur.shape[-2],
-                                                                                             backbone_feat_cur.shape[-1])
-            else:
-                motion_feat_cur = backbone_feat_cur
-
-            # Run target model
-            dimp_scores_cur = self.net.dimp_classifier.track_frame(dimp_filters, backbone_feat_cur)
-            dimp_scores_cur = dimp_scores_cur[:, :, :-1, :-1].contiguous()
-
-            # Jitter target model output for augmentation
-            jitter_info = None
-            if self.dimp_jitter_fn is not None:
-                dimp_scores_cur = self.dimp_jitter_fn(dimp_scores_cur, test_label_cur.clone())
-
-            # Input target model output along with previous frame information to the predictor
-            predictor_input_data = {'input1': motion_feat_prev, 'input2': motion_feat_cur,
-                                    'label_prev': label_prev, 'anno_prev': anno_prev,
-                                    'dimp_score_prev': dimp_scores_prev, 'dimp_score_cur': dimp_scores_cur,
-                                    'state_prev': state_prev,
-                                    'jitter_info': jitter_info}
-
-            predictor_output = self.net.predictor(predictor_input_data)
-
-            predicted_resp = predictor_output['response']
-            state_prev = predictor_output['state_cur']
-            aux_data = predictor_output['auxiliary_outputs']
-
-            is_valid = valid_samples[i, :].view(1, -1, 1, 1).byte()
-            uncertain_frame = (test_visibility[i, :].view(1, -1, 1, 1) < 0.75) * (test_visibility[i, :].view(1, -1, 1, 1) > 0.25)
-
-            is_valid = is_valid * ~uncertain_frame
-
-            # Calculate losses
-            clf_loss_test_new = self.objective['test_clf'](predicted_resp, test_label_cur,
-                                                           test_anno_cur, valid_samples=is_valid)
-            clf_loss_test_all[:, i - 1] = clf_loss_test_new.squeeze()
-
-            dimp_loss_test_new = self.objective['dimp_clf'](dimp_scores_cur, test_label_cur,
-                                                            test_anno_cur, valid_samples=is_valid)
-            dimp_loss_test_all[:, i - 1] = dimp_loss_test_new.squeeze()
-
-            if 'fused_score_orig' in aux_data and 'test_clf_orig' in self.loss_weight.keys():
-                aux_data['fused_score_orig'] = aux_data['fused_score_orig'].view(test_label_cur.shape)
-                clf_loss_test_orig_new = self.objective['test_clf'](aux_data['fused_score_orig'], test_label_cur, test_anno_cur,  valid_samples=is_valid)
-                clf_loss_test_orig_all[:, i - 1] = clf_loss_test_orig_new.squeeze()
-
-            if 'is_target' in aux_data and 'is_target' in self.loss_weight.keys() and 'is_target' in self.objective.keys():
-                is_target_loss_new = self.objective['is_target'](aux_data['is_target'], label_prev, is_valid_prev)
-                is_target_loss_all[:, i - 1] = is_target_loss_new
-
-            if 'is_target_after_prop' in aux_data and 'is_target_after_prop' in self.loss_weight.keys() and 'is_target' in self.objective.keys():
-                is_target_after_prop_loss_new = self.objective['is_target'](aux_data['is_target_after_prop'],
-                                                                            test_label_cur, is_valid)
-                is_target_after_prop_loss_all[:, i - 1] = is_target_after_prop_loss_new
-
-            test_clf_acc_new, test_pred_correct = self.objective['clf_acc'](predicted_resp, test_label_cur, valid_samples=is_valid)
-            test_clf_acc += test_clf_acc_new
-
-            test_seq_all_correct = test_seq_all_correct * (test_pred_correct.long() | (1 - is_valid).long()).float()
-            test_tracked_correct[:, i - 1] = test_pred_correct
-
-            dimp_clf_acc_new, dimp_pred_correct = self.objective['clf_acc'](dimp_scores_cur, test_label_cur, valid_samples=is_valid)
-            dimp_clf_acc += dimp_clf_acc_new
-
-            dimp_seq_all_correct = dimp_seq_all_correct * (dimp_pred_correct.long() | (1 - is_valid).long()).float()
-
-            motion_feat_prev = motion_feat_cur.clone()
-            dimp_scores_prev = dimp_scores_cur.clone()
-            label_prev = test_label_cur.clone()
-            is_valid_prev = is_valid.clone()
-
-        # Compute average loss over the sequence
-        clf_loss_test = clf_loss_test_all.mean()
-        clf_loss_test_orig = clf_loss_test_orig_all.mean()
-        dimp_loss_test = dimp_loss_test_all.mean()
-        is_target_loss = is_target_loss_all.mean()
-        is_target_after_prop_loss = is_target_after_prop_loss_all.mean()
-
-        test_clf_acc /= (sequence_length - 1)
-        dimp_clf_acc /= (sequence_length - 1)
-        clf_loss_test_orig /= (sequence_length - 1)
-
-        test_seq_clf_acc = test_seq_all_correct.mean()
-        dimp_seq_clf_acc = dimp_seq_all_correct.mean()
-
-        clf_loss_test_w = self.loss_weight['test_clf'] * clf_loss_test
-        clf_loss_test_orig_w = self.loss_weight['test_clf_orig'] * clf_loss_test_orig
-        dimp_loss_test_w = self.loss_weight.get('dimp_clf', 0.0) * dimp_loss_test
-
-        is_target_loss_w = self.loss_weight.get('is_target', 0.0) * is_target_loss
-        is_target_after_prop_loss_w = self.loss_weight.get('is_target_after_prop', 0.0) * is_target_after_prop_loss
-
-        loss = clf_loss_test_w + dimp_loss_test_w + is_target_loss_w + is_target_after_prop_loss_w + clf_loss_test_orig_w
-
-        stats = {'Loss/total': loss.item(),
-                 'Loss/test_clf': clf_loss_test_w.item(),
-                 'Loss/dimp_clf': dimp_loss_test_w.item(),
-                 'Loss/raw/test_clf': clf_loss_test.item(),
-                 'Loss/raw/test_clf_orig': clf_loss_test_orig.item(),
-                 'Loss/raw/dimp_clf': dimp_loss_test.item(),
-                 'Loss/raw/test_clf_acc': test_clf_acc.item(),
-                 'Loss/raw/dimp_clf_acc': dimp_clf_acc.item(),
-                 'Loss/raw/is_target': is_target_loss.item(),
-                 'Loss/raw/is_target_after_prop': is_target_after_prop_loss.item(),
-                 'Loss/raw/test_seq_acc': test_seq_clf_acc.item(),
-                 'Loss/raw/dimp_seq_acc': dimp_seq_clf_acc.item(),
-                 }
-
-        return loss, stats
-
-
-class DiMPSimpleActor(BaseActor):
-    """Actor for training the DiMP network."""
-    def __init__(self, net, objective, loss_weight=None):
-        super().__init__(net, objective)
-        if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
-        self.loss_weight = loss_weight
-
-    def __call__(self, data):
-        """
-        args:
-            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
-                    'test_proposals', 'proposal_iou' and 'test_label'.
-        returns:
-            loss    - the training loss
-            stats  -  dict containing detailed losses
-        """
-        # Run network
-        target_scores, bb_scores = self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            test_proposals=data['test_proposals'],
-                                            train_label=data['train_label'])
-
-        # Reshape bb reg variables
-        is_valid = data['test_anno'][:, :, 0] < 99999.0
-        bb_scores = bb_scores[is_valid, :]
-        proposal_density = data['proposal_density'][is_valid, :]
-        gt_density = data['gt_density'][is_valid, :]
-
-        # Compute loss
-        bb_ce = self.objective['bb_ce'](bb_scores, sample_density=proposal_density, gt_density=gt_density, mc_dim=1)
-        loss_bb_ce = self.loss_weight['bb_ce'] * bb_ce
-
-        loss_test_init_clf = 0
-        loss_test_iter_clf = 0
-
-        # Classification losses for the different optimization iterations
-        clf_losses_test = [self.objective['test_clf'](s, data['test_label'], data['test_anno']) for s in target_scores]
-
-        # Loss of the final filter
-        clf_loss_test = clf_losses_test[-1]
-        loss_target_classifier = self.loss_weight['test_clf'] * clf_loss_test
-
-        # Loss for the initial filter iteration
-        if 'test_init_clf' in self.loss_weight.keys():
-            loss_test_init_clf = self.loss_weight['test_init_clf'] * clf_losses_test[0]
-
-        # Loss for the intermediate filter iterations
-        if 'test_iter_clf' in self.loss_weight.keys():
-            test_iter_weights = self.loss_weight['test_iter_clf']
-            if isinstance(test_iter_weights, list):
-                loss_test_iter_clf = sum([a * b for a, b in zip(test_iter_weights, clf_losses_test[1:-1])])
-            else:
-                loss_test_iter_clf = (test_iter_weights / (len(clf_losses_test) - 2)) * sum(clf_losses_test[1:-1])
-
-        # Total loss
-        loss = loss_bb_ce + loss_target_classifier + loss_test_init_clf + loss_test_iter_clf
-
-        if torch.isinf(loss) or torch.isnan(loss):
-            raise Exception('ERROR: Loss was nan or inf!!!')
-
-        # Log stats
-        stats = {'Loss/total': loss.item(),
-                 'Loss/bb_ce': bb_ce.item(),
-                 'Loss/loss_bb_ce': loss_bb_ce.item()}
-        if 'test_clf' in self.loss_weight.keys():
-            stats['Loss/target_clf'] = loss_target_classifier.item()
-        if 'test_init_clf' in self.loss_weight.keys():
-            stats['Loss/test_init_clf'] = loss_test_init_clf.item()
-        if 'test_iter_clf' in self.loss_weight.keys():
-            stats['Loss/test_iter_clf'] = loss_test_iter_clf.item()
-
-        if 'test_clf' in self.loss_weight.keys():
-            stats['ClfTrain/test_loss'] = clf_loss_test.item()
-            if len(clf_losses_test) > 0:
-                stats['ClfTrain/test_init_loss'] = clf_losses_test[0].item()
-                if len(clf_losses_test) > 2:
-                    stats['ClfTrain/test_iter_loss'] = sum(clf_losses_test[1:-1]).item() / (len(clf_losses_test) - 2)
-
-        return loss, stats
-
-
-class TargetCandiateMatchingActor(BaseActor):
-    """Actor for training the KeepTrack network."""
-    def __init__(self, net, objective):
-        super().__init__(net, objective)
-
-    def __call__(self, data):
-        """
-        args:
-            data - The input data.
-        returns:
-            loss    - the training loss
-            stats  -  dict containing detailed losses
-        """
-
-        preds = self.net(**data)
-
-        # Classification losses for the different optimization iterations
-        losses = self.objective['target_candidate_matching'](**data, **preds)
-
-
-        # Total loss
-        loss = losses['total'].mean()
-
-        # Log stats
-        stats = {
-            'Loss/total': loss.item(),
-            'Loss/nll_pos': losses['nll_pos'].mean().item(),
-            'Loss/nll_neg': losses['nll_neg'].mean().item(),
-            'Loss/num_matchable': losses['num_matchable'].mean().item(),
-            'Loss/num_unmatchable': losses['num_unmatchable'].mean().item(),
-            'Loss/sinkhorn_norm': losses['sinkhorn_norm'].mean().item(),
-            'Loss/bin_score': losses['bin_score'].item(),
-        }
-
-        if hasattr(self.objective['target_candidate_matching'], 'metrics'):
-            metrics = self.objective['target_candidate_matching'].metrics(**data, **preds)
-
-            for key, val in metrics.items():
-                stats[key] = torch.mean(val[~torch.isnan(val)]).item()
-
-        return loss, stats
-
-class ToMPActor_autocast(BaseActor):
-    """Actor for training the DiMP network."""
-    def __init__(self, net, objective, loss_weight=None, use_autocast=False):
-        super().__init__(net, objective)
-        if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
-        self.loss_weight = loss_weight
-        self.use_autocast = use_autocast
 
     def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
         if ltrb_pred.dim() == 4:
             ltrb_pred = ltrb_pred.unsqueeze(0)
 
@@ -641,7 +47,919 @@ class ToMPActor_autocast(BaseActor):
         g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
         p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
 
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
+        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
+
+        return ious_pred_center
+
+    def __call__(self, data):
+        """Compute the weighted dense box and classification training losses.
+
+        Input:
+            data contains train_images/test_images (T, B, 3, H, W),
+            train_anno/test_anno (T, B, 4), train_label/test_label (T, B, h, w),
+            train_ltrb_target/test_ltrb_target (T, B, 4, h, w), and test_sample_region.
+        Output:
+            A scalar loss tensor and the existing loss/IoU statistics dictionary.
+        """
+        # Run network
+
+        target_scores, bbox_preds = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            train_label=data["train_label"],
+            train_ltrb_target=data["train_ltrb_target"],
+        )
+
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, data["test_ltrb_target"], data["test_sample_region"]
+        )
+
+        # Classification losses for the different optimization iterations
+        clf_loss_test = self.objective["test_clf"](
+            target_scores, data["test_label"], data["test_anno"]
+        )
+
+        loss = self.loss_weight["giou"] * loss_giou + self.loss_weight["test_clf"] * clf_loss_test
+
+        if torch.isnan(loss):
+            raise ValueError("NaN detected in loss")
+
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
+
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/clf_loss_test": clf_loss_test.item(),
+            "Loss/weighted_clf_loss_test": self.loss_weight["test_clf"] * clf_loss_test.item(),
+            "mIoU": ious.mean().item(),
+            "maxIoU": ious.max().item(),
+            "minIoU": ious.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+        }
+
+        if ious.max().item() > 0:
+            stats["stdIoU"] = ious[ious > 0].std().item()
+
+        return loss, stats
+
+
+# -----------------------------------------------------------------------------
+# GOT-JEPA pretraining and point tracking actors
+# -----------------------------------------------------------------------------
+
+
+# GOT-JEPA model predictor pretraining
+class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
+    """GOT-JEPA filter pretraining actor with original method overrides retained.
+
+    The later definitions of __init__, off_diagonal, loss_fn and __call__ are
+    the active ones. The class name is a saved interface, not the effective
+    covariance scale. The final __call__ body is incomplete in the source
+    baseline; readability changes deliberately preserve that behavior.
+    """
+
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {"bb_ce": 1.0}
+        self.loss_weight = loss_weight
+
+        print("ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp")
+
+    def off_diagonal(self, x):
+        n, m = x.shape
+        assert n == m
+        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+    def loss_fn(self, x, xExp, xp, y):
+
+        # x --> cls_filter_context
+        # xExp -->  cls_filter_context_Exp
+        # xp -->  cls_filter_context_p
+        # y -->  cls_filter_target
+        # yExp -->  cls_filter_target_Exp
+
+        # Print shapes for debugging
+
+        # Reshape x and y from (B, C, 1, 1) to (B, C)
+        """Compute filter-prediction and expanded-feature covariance losses.
+
+        Input:
+            x, xp, y: (B, C, 1, 1); xExp: (B, C_expanded, 1, 1), with B>1.
+        Output:
+            Total scalar loss and the scaled prediction loss; each retained
+            method definition uses its original covariance scale.
+        """
+        x = x.view(x.shape[0], x.shape[1])
+        xExp = xExp.view(xExp.shape[0], xExp.shape[1])
+        xp = xp.view(xp.shape[0], xp.shape[1])
+        y = y.view(y.shape[0], y.shape[1])
+
+        # invariance loss
+        # repr_loss = F.mse_loss(x, y)
+        repr_loss = F.smooth_l1_loss(xp, y)
+
+        # Normalize features
+        x = x - x.mean(dim=0, keepdim=True)
+        xExp = xExp - xExp.mean(dim=0, keepdim=True)
+        xp = xp - xp.mean(dim=0, keepdim=True)
+        y = y - y.mean(dim=0, keepdim=True)
+
+        # Ensure x and y have the expected shapes
+        # if x.ndim != 2 or y.ndim != 2:
+        #     raise ValueError("Expected 2D tensors for x and y")
+
+        # if x.shape != y.shape:
+        #     raise ValueError(f"Shape mismatch: x.shape = {x.shape}, y.shape = {y.shape}")
+
+        batch_size = x.shape[0]
+        D = xExp.shape[1]
+
+        # variance loss
+        # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+        # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+        # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+
+        # covariance loss
+        # Use mT instead of T for transposing
+        cov_x = (xExp.mT @ xExp) / (batch_size - 1)
+
+        cov_loss = self.off_diagonal(cov_x).pow_(2).sum().div(D)
+        # + self.off_diagonal(cov_y).pow_(2).sum().div(D)
+
+        # v_scale = 2.5
+        i_scale = 10000.0
+        c_scale = 400.0
+
+        inv_loss = i_scale * repr_loss
+
+        loss = inv_loss + c_scale * cov_loss
+
+        return loss, inv_loss
+
+    def __call__(self, data):
+        """Evaluate the context/target filters from the training batch.
+
+        Input:
+            data: Training/test images, training boxes, labels and ltrb targets.
+        Compatibility:
+            Duplicate method bodies are retained in their original order.
+            The final override ends with an unfinished expression in the baseline;
+            it does not return the earlier method's loss/statistics pair.
+        """
+        # Run network
+
+        (
+            cls_filter_context,
+            breg_filter_context,
+            cls_filter_context_Exp,
+            breg_filter_context_Exp,
+            cls_filter_context_p,
+            breg_filter_context_p,
+            cls_filter_target,
+            breg_filter_target,
+        ) = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            train_label=data["train_label"],
+            train_ltrb_target=data["train_ltrb_target"],
+        )
+
+        loss_cls_filter, inv_loss_c = self.loss_fn(
+            cls_filter_context, cls_filter_context_Exp, cls_filter_context_p, cls_filter_target
+        )
+        loss_breg_filter, inv_loss_b = self.loss_fn(
+            breg_filter_context, breg_filter_context_Exp, breg_filter_context_p, breg_filter_target
+        )
+
+        scale = 1
+
+        total_inv_loss = inv_loss_c + inv_loss_b
+
+        loss = scale * loss_cls_filter + scale * loss_breg_filter
+        # loss = self.loss_weight['giou'] * loss_cls_filter + self.loss_weight['test_clf'] * loss_breg_filter
+
+        diff_loss_invloss = loss - total_inv_loss
+
+        if torch.isnan(loss):
+            raise ValueError("NaN detected in loss")
+
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/loss_cls_filter": loss_cls_filter.item(),
+            "Loss/loss_breg_filter": loss_breg_filter.item(),
+            "Loss/weighted_loss_cls_filter": scale * loss_cls_filter.item(),
+            "Loss/weighted_loss_breg_filter": scale * loss_breg_filter.item(),
+            "Loss/total_inv_loss": scale * total_inv_loss.item(),
+            "Loss/diff_loss_invloss": scale * diff_loss_invloss.item(),
+        }
+
+        return loss, stats
+
+    """Actor for training the DiMP network."""
+
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {"bb_ce": 1.0}
+        self.loss_weight = loss_weight
+
+        print("ToMPActor_JEPAs1_vicregExpwovc800x_norm2_cexp")
+
+    def off_diagonal(self, x):
+        n, m = x.shape
+        assert n == m
+        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+    def loss_fn(self, x, xExp, xp, y):
+
+        # x --> cls_filter_context
+        # xExp -->  cls_filter_context_Exp
+        # xp -->  cls_filter_context_p
+        # y -->  cls_filter_target
+        # yExp -->  cls_filter_target_Exp
+
+        # Print shapes for debugging
+
+        # Reshape x and y from (B, C, 1, 1) to (B, C)
+        """Compute filter-prediction and expanded-feature covariance losses.
+
+        Input:
+            x, xp, y: (B, C, 1, 1); xExp: (B, C_expanded, 1, 1), with B>1.
+        Output:
+            Total scalar loss and the scaled prediction loss; each retained
+            method definition uses its original covariance scale.
+        """
+        x = x.view(x.shape[0], x.shape[1])
+        xExp = xExp.view(xExp.shape[0], xExp.shape[1])
+        xp = xp.view(xp.shape[0], xp.shape[1])
+        y = y.view(y.shape[0], y.shape[1])
+
+        # invariance loss
+        # repr_loss = F.mse_loss(x, y)
+        repr_loss = F.smooth_l1_loss(xp, y)
+
+        # Normalize features
+        x = x - x.mean(dim=0, keepdim=True)
+        xExp = xExp - xExp.mean(dim=0, keepdim=True)
+        xp = xp - xp.mean(dim=0, keepdim=True)
+        y = y - y.mean(dim=0, keepdim=True)
+
+        # Ensure x and y have the expected shapes
+        # if x.ndim != 2 or y.ndim != 2:
+        #     raise ValueError("Expected 2D tensors for x and y")
+
+        # if x.shape != y.shape:
+        #     raise ValueError(f"Shape mismatch: x.shape = {x.shape}, y.shape = {y.shape}")
+
+        batch_size = x.shape[0]
+        D = xExp.shape[1]
+
+        # variance loss
+        # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+        # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+        # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+
+        # covariance loss
+        # Use mT instead of T for transposing
+        cov_x = (xExp.mT @ xExp) / (batch_size - 1)
+
+        cov_loss = self.off_diagonal(cov_x).pow_(2).sum().div(D)
+        # + self.off_diagonal(cov_y).pow_(2).sum().div(D)
+
+        # v_scale = 2.5
+        i_scale = 10000.0
+        c_scale = 800.0
+
+        inv_loss = i_scale * repr_loss
+
+        loss = inv_loss + c_scale * cov_loss
+
+        return loss, inv_loss
+
+    def __call__(self, data):
+        """Evaluate the context/target filters from the training batch.
+
+        Input:
+            data: Training/test images, training boxes, labels and ltrb targets.
+        Compatibility:
+            Duplicate method bodies are retained in their original order.
+            The final override ends with an unfinished expression in the baseline;
+            it does not return the earlier method's loss/statistics pair.
+        """
+        # Run network
+
+        (
+            cls_filter_context,
+            breg_filter_context,
+            cls_filter_context_Exp,
+            breg_filter_context_Exp,
+            cls_filter_context_p,
+            breg_filter_context_p,
+            cls_filter_target,
+            breg_filter_target,
+        ) = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            train_label=data["train_label"],
+            train_ltrb_target=data["train_ltrb_target"],
+        )
+
+        loss_cls_filter, inv_loss_c = self.loss_fn(
+            cls_filter_context, cls_filter_context_Exp, cls_filter_context_p, cls_filter_target
+        )
+        loss_breg_filter, inv
+
+
+class ToMPActor_PTcur(BaseActor):
+    """Training actor for the PTcur variant; loss behavior is retained."""
+
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {"bb_ce": 1.0}
+        self.loss_weight = loss_weight
+
+    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
+        if ltrb_pred.dim() == 4:
+            ltrb_pred = ltrb_pred.unsqueeze(0)
+
+        n = scores.shape[1]
+        ids = scores.reshape(1, n, -1).max(dim=2)[1]
+        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
+
+        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
+
+        return ious_pred_center
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+
+        train_imgs_all_ = data["train_images"]
+        test_imgs_all_ = data["test_images"]
+        train_bb_in = data["train_anno"]
+        train_label_ = data["train_label"]
+        train_ltrb_target_ = data["train_ltrb_target"]
+        test_ltrb_target = data["test_ltrb_target"]
+        test_sample_region_ = data["test_sample_region"]
+        test_label_ = data["test_label"]
+        test_anno_ = data["test_anno"]
+
+        test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
+
+        # Assuming train_imgs_all_ has twice the number of elements as test_imgs_all_
+
+        half_length = int(len(train_imgs_all_) / 2)
+
+        train_bb_first_ = torch.cat(
+            (train_bb_in[0].unsqueeze(0), train_bb_in[half_length].unsqueeze(0)), dim=0
+        )
+        train_bb_last_ = torch.cat(
+            (train_bb_in[half_length - 1].unsqueeze(0), train_bb_in[-1].unsqueeze(0)), dim=0
+        )
+        train_label_last = torch.cat(
+            (train_label_[half_length - 1].unsqueeze(0), train_label_[-1].unsqueeze(0)), dim=0
+        )
+        train_label_first_ = torch.cat(
+            (train_label_[0].unsqueeze(0), train_label_[half_length].unsqueeze(0)), dim=0
+        )
+        train_imgs_ = torch.cat(
+            (train_imgs_all_[half_length - 1].unsqueeze(0), train_imgs_all_[-1].unsqueeze(0)),
+            dim=0,
+        )
+        train_ltrb_target_ = torch.cat(
+            (
+                train_ltrb_target_[half_length - 1].unsqueeze(0),
+                train_ltrb_target_[-1].unsqueeze(0),
+            ),
+            dim=0,
+        )
+
+        test_bb_ = test_anno_[-1].unsqueeze(0)
+        test_bb_first_ = test_anno_[0].unsqueeze(0)
+
+        test_sample_region_ = test_sample_region_[-1].unsqueeze(0)
+        test_anno_ = test_anno_[-1].unsqueeze(0)
+
+        test_label_last_ = data["test_label"][-1].unsqueeze(0)
+
+        test_label_first_ = data["test_label"][0].unsqueeze(0)  # second dim is batch
+        test_label_mid = data["test_label"][len(test_anno_) // 2].unsqueeze(0)
+        # test_label_first_ = data['test_label'][0:6] # seq
+        # test_label_mid = None
+
+        test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
+
+        test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
+        test_ltrb_target_mid_ = test_ltrb_target[len(test_anno_) // 2].unsqueeze(0)
+        # test_ltrb_target_first_ = test_ltrb_target[0:6] # seq
+        # test_ltrb_target_mid_ = None
+
+        # Print shapes # 3 batch num_train_frames = 5*2 num_test_frames = 5
+
+        # Run network
+        # target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
+        #                                      test_imgs=data['test_images'],
+        #                                      train_bb=data['train_anno'],
+        #                                      train_label=data['train_label'],
+        #                                      train_ltrb_target=data['train_ltrb_target'])
+
+        target_scores, bbox_preds, target_scores_PT, bbox_preds_PT = (
+            self.net(  # target_scores, bbox_preds, PT_LTRB = self.net( \
+                # target_scores, track_scores, bbox_preds = self.net( \
+                train_imgs=train_imgs_,
+                test_imgs=test_imgs_,
+                train_imgs_all=train_imgs_all_,
+                test_imgs_all=test_imgs_all_,
+                train_bb=train_bb_last_,
+                train_bb_first=train_bb_first_,
+                test_bb_first=test_bb_first_,
+                train_label=train_label_last,
+                train_label_first=train_label_first_,
+                test_label_first=test_label_first_,
+                test_label_mid=test_label_mid,
+                train_ltrb_target=train_ltrb_target_,
+                test_ltrb_target_first=test_ltrb_target_first_,
+                test_ltrb_target_mid=test_ltrb_target_mid_,
+            )
+        )
+
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, test_ltrb_target_, test_sample_region_
+        )
+
+        loss_giou_PT, ious_PT = self.objective["giou"](
+            bbox_preds_PT, test_ltrb_target_, test_sample_region_
+        )
+
+        # im_size = bbox_preds.shape[-1]*14
+        # PT_loss_giou = self.compute_iou_PT(test_anno_, PT_LTRB, im_size)
+
+        # Classification losses for the different optimization iterations
+
+        clf_loss_test = self.objective["test_clf"](target_scores, test_label_last_, test_anno_)
+        clf_loss_test_PT = self.objective["test_clf"](
+            target_scores_PT, test_label_last_, test_anno_
+        )
+        # track_clf_loss_test = self.objective['test_clf'](track_scores, test_label_last_, test_anno_)
+
+        loss_ToMP = (
+            self.loss_weight["giou"] * loss_giou + self.loss_weight["test_clf"] * clf_loss_test
+        )
+        # loss_PT = self.loss_weight['giou'] * loss_giou_PT + self.loss_weight['test_clf'] * clf_loss_test_PT
+        loss_PT = (
+            self.loss_weight["giouPT"] * loss_giou_PT
+            + self.loss_weight["test_clfPT"] * clf_loss_test_PT
+        )
+
+        loss = loss_ToMP + loss_PT
+
+        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
+        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * track_clf_loss_test
+
+        # loss = 0.01 * loss_giou + 0.01 * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
+
+        if torch.isnan(loss):
+            raise ValueError("NaN detected in loss")
+
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
+        ious_pred_centerPT = self.compute_iou_at_max_score_pos(
+            target_scores_PT, data["test_ltrb_target"], bbox_preds
+        )
+        # track_ious_pred_center = self.compute_iou_at_max_score_pos(track_scores, data['test_ltrb_target'], bbox_preds)
+
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/GIoUPT": loss_giou_PT.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            #  'Loss/weighted_GIoUPT': self.loss_weight['giou']*loss_giou_PT.item(),
+            "Loss/weighted_GIoUPT": self.loss_weight["giouPT"] * loss_giou_PT.item(),
+            "Loss/clf_loss_test": clf_loss_test.item(),
+            "Loss/clf_loss_testPT": clf_loss_test_PT.item(),
+            "Loss/weighted_clf_loss_test": self.loss_weight["test_clf"] * clf_loss_test.item(),
+            #  'Loss/weighted_clf_loss_testPT': self.loss_weight['test_clf']*clf_loss_test_PT.item(),
+            "Loss/weighted_clf_loss_testPT": self.loss_weight["test_clfPT"]
+            * clf_loss_test_PT.item(),
+            "mIoU": ious.mean().item(),
+            "mIoUPT": ious_PT.mean().item(),
+            "maxIoU": ious.max().item(),
+            "maxIoUPT": ious_PT.max().item(),
+            "minIoU": ious.min().item(),
+            "minIoUPT": ious_PT.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+            "mIoU_pred_centerPT": clf_loss_test_PT.mean().item(),
+            "Loss/loss_ToMP": loss_ToMP.item(),
+            "Loss/loss_PT": loss_PT.item(),
+            #  'Loss/PTGIoU': PT_loss_giou.item(),
+            #  'Loss/weighted_PTGIoU': self.loss_weight['giou']*PT_loss_giou.item(),
+            #  'Loss/track_clf_loss_test': track_clf_loss_test.item(),
+            #  'Loss/weighted_track_clf_loss_test': self.loss_weight['test_clf']*track_clf_loss_test.item(),
+            #  'track_ious_pred_center': track_ious_pred_center.mean().item(),
+        }
+
+        if ious.max().item() > 0:
+            stats["stdIoU"] = ious[ious > 0].std().item()
+
+        return loss, stats
+
+
+class ToMPActor_PTcurq2(BaseActor):
+    """Training actor for the PTcurq2 variant; loss behavior is retained."""
+
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {"bb_ce": 1.0}
+        self.loss_weight = loss_weight
+
+    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
+        if ltrb_pred.dim() == 4:
+            ltrb_pred = ltrb_pred.unsqueeze(0)
+
+        n = scores.shape[1]
+        ids = scores.reshape(1, n, -1).max(dim=2)[1]
+        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
+
+        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
+
+        return ious_pred_center
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+
+        train_imgs_all_ = data["train_images"]
+        test_imgs_all_ = data["test_images"]
+        train_bb_in = data["train_anno"]
+        train_label_ = data["train_label"]
+        train_ltrb_target_ = data["train_ltrb_target"]
+        test_ltrb_target = data["test_ltrb_target"]
+        test_sample_region_ = data["test_sample_region"]
+        test_label_ = data["test_label"]
+        test_anno_ = data["test_anno"]
+
+        test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
+
+        half_length = int(len(train_imgs_all_) / 2)
+
+        # train_bb_first_  = torch.cat((train_bb_in[0].unsqueeze(0), train_bb_in[half_length].unsqueeze(0)), dim=0)
+        train_bb_last_ = torch.cat(
+            (train_bb_in[half_length - 1].unsqueeze(0), train_bb_in[-1].unsqueeze(0)), dim=0
+        )
+        train_label_last = torch.cat(
+            (train_label_[half_length - 1].unsqueeze(0), train_label_[-1].unsqueeze(0)), dim=0
+        )
+        # train_label_first_ = torch.cat((train_label_[0].unsqueeze(0), train_label_[half_length].unsqueeze(0)), dim=0)
+        train_imgs_ = torch.cat(
+            (train_imgs_all_[half_length - 1].unsqueeze(0), train_imgs_all_[-1].unsqueeze(0)),
+            dim=0,
+        )
+        train_ltrb_target_ = torch.cat(
+            (
+                train_ltrb_target_[half_length - 1].unsqueeze(0),
+                train_ltrb_target_[-1].unsqueeze(0),
+            ),
+            dim=0,
+        )
+
+        test_bb_ = test_anno_[-1].unsqueeze(0)
+
+        test_bb_first_ = test_anno_[0].unsqueeze(0)
+        test_bb_mid_ = test_anno_[len(test_anno_) // 2].unsqueeze(0)
+
+        test_sample_region_ = test_sample_region_[-1].unsqueeze(0)
+        test_anno_ = test_anno_[-1].unsqueeze(0)
+
+        test_label_last_ = data["test_label"][-1].unsqueeze(0)
+
+        test_label_first_ = data["test_label"][0].unsqueeze(0)  # second dim is batch
+        test_label_mid = data["test_label"][len(test_anno_) // 2].unsqueeze(0)
+
+        test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
+
+        # test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
+        # test_ltrb_target_mid_ = test_ltrb_target[len(test_anno_) // 2].unsqueeze(0)
+
+        target_scores, bbox_preds, target_scores_PT, bbox_preds_PT = self.net(
+            train_imgs=train_imgs_,
+            test_imgs=test_imgs_,
+            train_imgs_all=train_imgs_all_,
+            test_imgs_all=test_imgs_all_,
+            train_bb=train_bb_last_,
+            # train_bb_first = train_bb_first_,
+            test_bb_first=test_bb_first_,
+            test_bb_mid=test_bb_mid_,
+            train_label=train_label_last,
+            # train_label_first=train_label_first_,
+            test_label_first=test_label_first_,
+            test_label_mid=test_label_mid,
+            train_ltrb_target=train_ltrb_target_,
+            # test_ltrb_target_first=test_ltrb_target_first_,
+            # test_ltrb_target_mid=test_ltrb_target_mid_,
+        )
+
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, test_ltrb_target_, test_sample_region_
+        )
+
+        loss_giou_PT, ious_PT = self.objective["giou"](
+            bbox_preds_PT, test_ltrb_target_, test_sample_region_
+        )
+
+        clf_loss_test = self.objective["test_clf"](target_scores, test_label_last_, test_anno_)
+        clf_loss_test_PT = self.objective["test_clf"](
+            target_scores_PT, test_label_last_, test_anno_
+        )
+        loss_ToMP = (
+            self.loss_weight["giou"] * loss_giou + self.loss_weight["test_clf"] * clf_loss_test
+        )
+        loss_PT = (
+            self.loss_weight["giouPT"] * loss_giou_PT
+            + self.loss_weight["test_clfPT"] * clf_loss_test_PT
+        )
+
+        loss = loss_ToMP + loss_PT
+
+        if torch.isnan(loss):
+            raise ValueError("NaN detected in loss")
+
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
+        ious_pred_centerPT = self.compute_iou_at_max_score_pos(
+            target_scores_PT, data["test_ltrb_target"], bbox_preds
+        )
+
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/GIoUPT": loss_giou_PT.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/weighted_GIoUPT": self.loss_weight["giouPT"] * loss_giou_PT.item(),
+            "Loss/clf_loss_test": clf_loss_test.item(),
+            "Loss/clf_loss_testPT": clf_loss_test_PT.item(),
+            "Loss/weighted_clf_loss_test": self.loss_weight["test_clf"] * clf_loss_test.item(),
+            "Loss/weighted_clf_loss_testPT": self.loss_weight["test_clfPT"]
+            * clf_loss_test_PT.item(),
+            "mIoU": ious.mean().item(),
+            "mIoUPT": ious_PT.mean().item(),
+            "maxIoU": ious.max().item(),
+            "maxIoUPT": ious_PT.max().item(),
+            "minIoU": ious.min().item(),
+            "minIoUPT": ious_PT.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+            "mIoU_pred_centerPT": clf_loss_test_PT.mean().item(),
+            "Loss/loss_ToMP": loss_ToMP.item(),
+            "Loss/loss_PT": loss_PT.item(),
+        }
+
+        if ious.max().item() > 0:
+            stats["stdIoU"] = ious[ious > 0].std().item()
+
+        return loss, stats
+
+
+class ToMPActor_PT(BaseActor):
+    """Training actor for the PT variant; loss behavior is retained."""
+
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {"bb_ce": 1.0}
+        self.loss_weight = loss_weight
+
+    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
+        if ltrb_pred.dim() == 4:
+            ltrb_pred = ltrb_pred.unsqueeze(0)
+
+        n = scores.shape[1]
+        ids = scores.reshape(1, n, -1).max(dim=2)[1]
+        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
+
+        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
+
+        return ious_pred_center
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+
+        train_imgs_all_ = data["train_images"]
+        test_imgs_all_ = data["test_images"]
+        train_bb_in = data["train_anno"]
+        train_label_ = data["train_label"]
+        train_ltrb_target_ = data["train_ltrb_target"]
+        test_ltrb_target = data["test_ltrb_target"]
+        test_sample_region_ = data["test_sample_region"]
+        test_label_ = data["test_label"]
+        test_anno_ = data["test_anno"]
+
+        test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
+
+        # Assuming train_imgs_all_ has twice the number of elements as test_imgs_all_
+
+        half_length = int(len(train_imgs_all_) / 2)
+
+        train_bb_first_ = torch.cat(
+            (train_bb_in[0].unsqueeze(0), train_bb_in[half_length].unsqueeze(0)), dim=0
+        )
+        train_bb_last_ = torch.cat(
+            (train_bb_in[half_length - 1].unsqueeze(0), train_bb_in[-1].unsqueeze(0)), dim=0
+        )
+        train_label_last = torch.cat(
+            (train_label_[half_length - 1].unsqueeze(0), train_label_[-1].unsqueeze(0)), dim=0
+        )
+        train_label_first_ = torch.cat(
+            (train_label_[0].unsqueeze(0), train_label_[half_length].unsqueeze(0)), dim=0
+        )
+        train_imgs_ = torch.cat(
+            (train_imgs_all_[half_length - 1].unsqueeze(0), train_imgs_all_[-1].unsqueeze(0)),
+            dim=0,
+        )
+        train_ltrb_target_ = torch.cat(
+            (
+                train_ltrb_target_[half_length - 1].unsqueeze(0),
+                train_ltrb_target_[-1].unsqueeze(0),
+            ),
+            dim=0,
+        )
+
+        test_bb_ = test_anno_[-1].unsqueeze(0)
+        test_bb_first_ = test_anno_[0].unsqueeze(0)
+
+        test_sample_region_ = test_sample_region_[-1].unsqueeze(0)
+        test_anno_ = test_anno_[-1].unsqueeze(0)
+
+        test_label_last_ = data["test_label"][-1].unsqueeze(0)
+
+        test_label_first_ = data["test_label"][0].unsqueeze(0)  # second dim is batch
+        test_label_mid = data["test_label"][len(data) // 2].unsqueeze(0)
+        # test_label_first_ = data['test_label'][0:6] # seq
+        # test_label_mid = None
+
+        test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
+
+        test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
+        test_ltrb_target_mid_ = test_ltrb_target[len(data) // 2].unsqueeze(0)
+
+        target_scores, bbox_preds = self.net(
+            train_imgs=train_imgs_,
+            test_imgs=test_imgs_,
+            train_imgs_all=train_imgs_all_,
+            test_imgs_all=test_imgs_all_,
+            train_bb=train_bb_last_,
+            train_bb_first=train_bb_first_,
+            test_bb_first=test_bb_first_,
+            train_label=train_label_last,
+            train_label_first=train_label_first_,
+            test_label_first=test_label_first_,
+            test_label_mid=test_label_mid,
+            train_ltrb_target=train_ltrb_target_,
+            test_ltrb_target_first=test_ltrb_target_first_,
+            test_ltrb_target_mid=test_ltrb_target_mid_,
+        )
+
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, test_ltrb_target_, test_sample_region_
+        )
+
+        clf_loss_test = self.objective["test_clf"](target_scores, test_label_last_, test_anno_)
+        # track_clf_loss_test = self.objective['test_clf'](track_scores, test_label_last_, test_anno_)
+
+        loss = self.loss_weight["giou"] * loss_giou + self.loss_weight["test_clf"] * clf_loss_test
+        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
+        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * track_clf_loss_test
+
+        # loss = 0.01 * loss_giou + 0.01 * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
+
+        if torch.isnan(loss):
+            raise ValueError("NaN detected in loss")
+
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
+        # track_ious_pred_center = self.compute_iou_at_max_score_pos(track_scores, data['test_ltrb_target'], bbox_preds)
+
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/clf_loss_test": clf_loss_test.item(),
+            "Loss/weighted_clf_loss_test": self.loss_weight["test_clf"] * clf_loss_test.item(),
+            "mIoU": ious.mean().item(),
+            "maxIoU": ious.max().item(),
+            "minIoU": ious.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+        }
+
+        if ious.max().item() > 0:
+            stats["stdIoU"] = ious[ious > 0].std().item()
+
+        return loss, stats
+
+
+# -----------------------------------------------------------------------------
+# ToMP/DiMP and shared loss variants
+# -----------------------------------------------------------------------------
+
+
+class ToMPActor_autocast(BaseActor):
+    """Training actor for the autocast variant; loss behavior is retained."""
+
+    def __init__(self, net, objective, loss_weight=None, use_autocast=False):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {"bb_ce": 1.0}
+        self.loss_weight = loss_weight
+        self.use_autocast = use_autocast
+
+    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
+        if ltrb_pred.dim() == 4:
+            ltrb_pred = ltrb_pred.unsqueeze(0)
+
+        n = scores.shape[1]
+        ids = scores.reshape(1, n, -1).max(dim=2)[1]
+        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
+
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
         ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
 
         return ious_pred_center
@@ -660,126 +978,83 @@ class ToMPActor_autocast(BaseActor):
 
         if self.use_autocast:
             with torch.autocast(device_type="cuda"):
-                target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
-                                                    test_imgs=data['test_images'],
-                                                    train_bb=data['train_anno'],
-                                                    train_label=data['train_label'],
-                                                    train_ltrb_target=data['train_ltrb_target'])
+                target_scores, bbox_preds = self.net(
+                    train_imgs=data["train_images"],
+                    test_imgs=data["test_images"],
+                    train_bb=data["train_anno"],
+                    train_label=data["train_label"],
+                    train_ltrb_target=data["train_ltrb_target"],
+                )
 
-            loss_giou, ious = self.objective['giou'](bbox_preds, data['test_ltrb_target'], data['test_sample_region'])
-            clf_loss_test = self.objective['test_clf'](target_scores, data['test_label'], data['test_anno'])
+            loss_giou, ious = self.objective["giou"](
+                bbox_preds, data["test_ltrb_target"], data["test_sample_region"]
+            )
+            clf_loss_test = self.objective["test_clf"](
+                target_scores, data["test_label"], data["test_anno"]
+            )
         else:
-            target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
-                                                test_imgs=data['test_images'],
-                                                train_bb=data['train_anno'],
-                                                train_label=data['train_label'],
-                                                train_ltrb_target=data['train_ltrb_target'])
+            target_scores, bbox_preds = self.net(
+                train_imgs=data["train_images"],
+                test_imgs=data["test_images"],
+                train_bb=data["train_anno"],
+                train_label=data["train_label"],
+                train_ltrb_target=data["train_ltrb_target"],
+            )
 
-            loss_giou, ious = self.objective['giou'](bbox_preds, data['test_ltrb_target'], data['test_sample_region'])
-            clf_loss_test = self.objective['test_clf'](target_scores, data['test_label'], data['test_anno'])
+            loss_giou, ious = self.objective["giou"](
+                bbox_preds, data["test_ltrb_target"], data["test_sample_region"]
+            )
+            clf_loss_test = self.objective["test_clf"](
+                target_scores, data["test_label"], data["test_anno"]
+            )
 
-        loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
-
-        if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
-
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
-
-        stats = {'Loss/total': loss.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/clf_loss_test': clf_loss_test.item(),
-                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
-                 'mIoU': ious.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'minIoU': ious.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item()}
-
-        if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
-
-        return loss, stats
-
-# train stage 1
-class ToMPActor(BaseActor):
-    """Actor for training the DiMP network."""
-    def __init__(self, net, objective, loss_weight=None):
-        super().__init__(net, objective)
-        if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
-        self.loss_weight = loss_weight
-
-    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
-        if ltrb_pred.dim() == 4:
-            ltrb_pred = ltrb_pred.unsqueeze(0)
-
-        n = scores.shape[1]
-        ids = scores.reshape(1, n, -1).max(dim=2)[1]
-        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
-        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
-
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
-        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
-
-        return ious_pred_center
-
-    def __call__(self, data):
-        """
-        args:
-            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
-                    'test_proposals', 'proposal_iou' and 'test_label'.
-
-        returns:
-            loss    - the training loss
-            stats  -  dict containing detailed losses
-        """
-        # Run network
-
-        target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            train_label=data['train_label'],
-                                            train_ltrb_target=data['train_ltrb_target'])
-
-        loss_giou, ious = self.objective['giou'](bbox_preds, data['test_ltrb_target'], data['test_sample_region'])
-
-        # Classification losses for the different optimization iterations
-        clf_loss_test = self.objective['test_clf'](target_scores, data['test_label'], data['test_anno'])
-
-        loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
+        loss = self.loss_weight["giou"] * loss_giou + self.loss_weight["test_clf"] * clf_loss_test
 
         if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
+            raise ValueError("NaN detected in loss")
 
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
 
-        stats = {'Loss/total': loss.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/clf_loss_test': clf_loss_test.item(),
-                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
-                 'mIoU': ious.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'minIoU': ious.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item()}
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/clf_loss_test": clf_loss_test.item(),
+            "Loss/weighted_clf_loss_test": self.loss_weight["test_clf"] * clf_loss_test.item(),
+            "mIoU": ious.mean().item(),
+            "maxIoU": ious.max().item(),
+            "minIoU": ious.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+        }
 
         if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
+            stats["stdIoU"] = ious[ious > 0].std().item()
 
         return loss, stats
-
 
 
 # train stage 1
 class ToMPActor_wL1(BaseActor):
-    """Actor for training the DiMP network."""
+    """Training actor for the wL1 variant; loss behavior is retained."""
+
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
         if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
+            loss_weight = {"bb_ce": 1.0}
         self.loss_weight = loss_weight
 
     def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
         if ltrb_pred.dim() == 4:
             ltrb_pred = ltrb_pred.unsqueeze(0)
 
@@ -788,7 +1063,7 @@ class ToMPActor_wL1(BaseActor):
         g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
         p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
 
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
         ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
 
         return ious_pred_center
@@ -805,55 +1080,78 @@ class ToMPActor_wL1(BaseActor):
         """
         # Run network
 
-        target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            train_label=data['train_label'],
-                                            train_ltrb_target=data['train_ltrb_target'])
+        target_scores, bbox_preds = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            train_label=data["train_label"],
+            train_ltrb_target=data["train_ltrb_target"],
+        )
 
-        loss_giou, ious = self.objective['giou'](bbox_preds, data['test_ltrb_target'], data['test_sample_region'])
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, data["test_ltrb_target"], data["test_sample_region"]
+        )
 
-        loss_L1 = self.objective['L1'](bbox_preds, data['test_ltrb_target'])
-        
+        loss_L1 = self.objective["L1"](bbox_preds, data["test_ltrb_target"])
+
         # Classification losses for the different optimization iterations
-        clf_loss_test = self.objective['test_clf'](target_scores, data['test_label'], data['test_anno'])
+        clf_loss_test = self.objective["test_clf"](
+            target_scores, data["test_label"], data["test_anno"]
+        )
 
-        loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['L1'] * loss_L1 + self.loss_weight['test_clf'] * clf_loss_test
+        loss = (
+            self.loss_weight["giou"] * loss_giou
+            + self.loss_weight["L1"] * loss_L1
+            + self.loss_weight["test_clf"] * clf_loss_test
+        )
 
         if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
+            raise ValueError("NaN detected in loss")
 
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
 
-        stats = {'Loss/total': loss.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/L1': loss_L1.item(),
-                 'Loss/weighted_L1': self.loss_weight['L1']*loss_L1.item(),
-                 'Loss/clf_loss_test': clf_loss_test.item(),
-                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
-                 'mIoU': ious.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'minIoU': ious.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item()}
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/L1": loss_L1.item(),
+            "Loss/weighted_L1": self.loss_weight["L1"] * loss_L1.item(),
+            "Loss/clf_loss_test": clf_loss_test.item(),
+            "Loss/weighted_clf_loss_test": self.loss_weight["test_clf"] * clf_loss_test.item(),
+            "mIoU": ious.mean().item(),
+            "maxIoU": ious.max().item(),
+            "minIoU": ious.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+        }
 
         if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
+            stats["stdIoU"] = ious[ious > 0].std().item()
 
         return loss, stats
 
 
-
 # train stage 1
 class ToMPActor_comlossLGHF(BaseActor):
-    """Actor for training the DiMP network."""
+    """Training actor for the comlossLGHF variant; loss behavior is retained."""
+
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
         if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
+            loss_weight = {"bb_ce": 1.0}
         self.loss_weight = loss_weight
 
     def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
         if ltrb_pred.dim() == 4:
             ltrb_pred = ltrb_pred.unsqueeze(0)
 
@@ -862,7 +1160,7 @@ class ToMPActor_comlossLGHF(BaseActor):
         g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
         p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
 
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
         ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
 
         return ious_pred_center
@@ -879,61 +1177,89 @@ class ToMPActor_comlossLGHF(BaseActor):
         """
         # Run network
 
-        target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            train_label=data['train_label'],
-                                            train_ltrb_target=data['train_ltrb_target'])
+        target_scores, bbox_preds = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            train_label=data["train_label"],
+            train_ltrb_target=data["train_ltrb_target"],
+        )
 
-        loss_giou, ious = self.objective['giou'](bbox_preds, data['test_ltrb_target'], data['test_sample_region'])
-        loss_L1 = self.objective['L1'](bbox_preds, data['test_ltrb_target'])
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, data["test_ltrb_target"], data["test_sample_region"]
+        )
+        loss_L1 = self.objective["L1"](bbox_preds, data["test_ltrb_target"])
 
         # Classification losses for the different optimization iterations
-        clf_loss_test = self.objective['test_clf'](target_scores, data['test_label'], data['test_anno'])
-        clf_loss_test_focal = self.objective['test_clf_focal'](target_scores, data['test_label'], data['test_anno'])
+        clf_loss_test = self.objective["test_clf"](
+            target_scores, data["test_label"], data["test_anno"]
+        )
+        clf_loss_test_focal = self.objective["test_clf_focal"](
+            target_scores, data["test_label"], data["test_anno"]
+        )
 
-        loss_giou_hinge = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
+        loss_giou_hinge = (
+            self.loss_weight["giou"] * loss_giou + self.loss_weight["test_clf"] * clf_loss_test
+        )
 
-        loss_L1_focal = self.loss_weight['L1'] * loss_L1 + self.loss_weight['test_clf_focal'] * clf_loss_test_focal
+        loss_L1_focal = (
+            self.loss_weight["L1"] * loss_L1
+            + self.loss_weight["test_clf_focal"] * clf_loss_test_focal
+        )
 
         loss = loss_giou_hinge + loss_L1_focal
 
         if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
+            raise ValueError("NaN detected in loss")
 
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
 
-        stats = {'Loss/total': loss.item(),
-                'Loss/giou_hinge': loss_giou_hinge.item(),
-                'Loss/L1_focal': loss_L1_focal.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/L1': loss_L1.item(),
-                 'Loss/weighted_L1': self.loss_weight['L1']*loss_L1.item(),
-                 'Loss/clf_loss_test': clf_loss_test.item(),
-                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
-                 'Loss/clf_loss_test_focal': clf_loss_test_focal.item(),
-                 'Loss/weighted_clf_loss_test_focal': self.loss_weight['test_clf_focal']*clf_loss_test_focal.item(),
-                 'mIoU': ious.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'minIoU': ious.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item()}
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/giou_hinge": loss_giou_hinge.item(),
+            "Loss/L1_focal": loss_L1_focal.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/L1": loss_L1.item(),
+            "Loss/weighted_L1": self.loss_weight["L1"] * loss_L1.item(),
+            "Loss/clf_loss_test": clf_loss_test.item(),
+            "Loss/weighted_clf_loss_test": self.loss_weight["test_clf"] * clf_loss_test.item(),
+            "Loss/clf_loss_test_focal": clf_loss_test_focal.item(),
+            "Loss/weighted_clf_loss_test_focal": self.loss_weight["test_clf_focal"]
+            * clf_loss_test_focal.item(),
+            "mIoU": ious.mean().item(),
+            "maxIoU": ious.max().item(),
+            "minIoU": ious.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+        }
 
         if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
+            stats["stdIoU"] = ious[ious > 0].std().item()
 
         return loss, stats
 
 
 class ToMPActor_comlossLGH(BaseActor):
-    """Actor for training the DiMP network."""
+    """Training actor for the comlossLGH variant; loss behavior is retained."""
+
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
         if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
+            loss_weight = {"bb_ce": 1.0}
         self.loss_weight = loss_weight
 
     def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
         if ltrb_pred.dim() == 4:
             ltrb_pred = ltrb_pred.unsqueeze(0)
 
@@ -942,7 +1268,7 @@ class ToMPActor_comlossLGH(BaseActor):
         g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
         p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
 
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
         ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
 
         return ious_pred_center
@@ -959,60 +1285,80 @@ class ToMPActor_comlossLGH(BaseActor):
         """
         # Run network
 
-        target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            train_label=data['train_label'],
-                                            train_ltrb_target=data['train_ltrb_target'])
+        target_scores, bbox_preds = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            train_label=data["train_label"],
+            train_ltrb_target=data["train_ltrb_target"],
+        )
 
-        loss_giou, ious = self.objective['giou'](bbox_preds, data['test_ltrb_target'], data['test_sample_region'])
-        loss_L1 = self.objective['L1'](bbox_preds, data['test_ltrb_target'])
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, data["test_ltrb_target"], data["test_sample_region"]
+        )
+        loss_L1 = self.objective["L1"](bbox_preds, data["test_ltrb_target"])
 
         # Classification losses for the different optimization iterations
-        clf_loss_test = self.objective['test_clf'](target_scores, data['test_label'], data['test_anno'])
+        clf_loss_test = self.objective["test_clf"](
+            target_scores, data["test_label"], data["test_anno"]
+        )
 
-        loss_giou_hinge = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
+        loss_giou_hinge = (
+            self.loss_weight["giou"] * loss_giou + self.loss_weight["test_clf"] * clf_loss_test
+        )
 
-        loss_L1 = self.loss_weight['L1'] * loss_L1
+        loss_L1 = self.loss_weight["L1"] * loss_L1
 
         loss = loss_giou_hinge + loss_L1
 
         if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
+            raise ValueError("NaN detected in loss")
 
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
 
-        stats = {'Loss/total': loss.item(),
-                'Loss/giou_hinge': loss_giou_hinge.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/L1': loss_L1.item(),
-                 'Loss/weighted_L1': self.loss_weight['L1']*loss_L1.item(),
-                 'Loss/clf_loss_test': clf_loss_test.item(),
-                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
-                 'mIoU': ious.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'minIoU': ious.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item()}
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/giou_hinge": loss_giou_hinge.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/L1": loss_L1.item(),
+            "Loss/weighted_L1": self.loss_weight["L1"] * loss_L1.item(),
+            "Loss/clf_loss_test": clf_loss_test.item(),
+            "Loss/weighted_clf_loss_test": self.loss_weight["test_clf"] * clf_loss_test.item(),
+            "mIoU": ious.mean().item(),
+            "maxIoU": ious.max().item(),
+            "minIoU": ious.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+        }
 
         if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
+            stats["stdIoU"] = ious[ious > 0].std().item()
 
         return loss, stats
-
-
 
 
 # train stage 1
 class ToMPActor_comlossLGF(BaseActor):
-    """Actor for training the DiMP network."""
+    """Training actor for the comlossLGF variant; loss behavior is retained."""
+
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
         if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
+            loss_weight = {"bb_ce": 1.0}
         self.loss_weight = loss_weight
 
     def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
         if ltrb_pred.dim() == 4:
             ltrb_pred = ltrb_pred.unsqueeze(0)
 
@@ -1021,7 +1367,7 @@ class ToMPActor_comlossLGF(BaseActor):
         g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
         p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
 
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
         ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
 
         return ious_pred_center
@@ -1038,60 +1384,83 @@ class ToMPActor_comlossLGF(BaseActor):
         """
         # Run network
 
-        target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            train_label=data['train_label'],
-                                            train_ltrb_target=data['train_ltrb_target'])
+        target_scores, bbox_preds = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            train_label=data["train_label"],
+            train_ltrb_target=data["train_ltrb_target"],
+        )
 
-        loss_giou, ious = self.objective['giou'](bbox_preds, data['test_ltrb_target'], data['test_sample_region'])
-        loss_L1 = self.objective['L1'](bbox_preds, data['test_ltrb_target'])
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, data["test_ltrb_target"], data["test_sample_region"]
+        )
+        loss_L1 = self.objective["L1"](bbox_preds, data["test_ltrb_target"])
 
         # Classification losses for the different optimization iterations
 
-        clf_loss_test_focal = self.objective['test_clf_focal'](target_scores, data['test_label'], data['test_anno'])
+        clf_loss_test_focal = self.objective["test_clf_focal"](
+            target_scores, data["test_label"], data["test_anno"]
+        )
 
-        loss_giou = self.loss_weight['giou'] * loss_giou
+        loss_giou = self.loss_weight["giou"] * loss_giou
 
-        loss_L1_focal = self.loss_weight['L1'] * loss_L1 + self.loss_weight['test_clf_focal'] * clf_loss_test_focal
+        loss_L1_focal = (
+            self.loss_weight["L1"] * loss_L1
+            + self.loss_weight["test_clf_focal"] * clf_loss_test_focal
+        )
 
         loss = loss_giou + loss_L1_focal
 
         if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
+            raise ValueError("NaN detected in loss")
 
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
 
-        stats = {'Loss/total': loss.item(),
-                 'Loss/L1_focal': loss_L1_focal.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/L1': loss_L1.item(),
-                 'Loss/weighted_L1': self.loss_weight['L1']*loss_L1.item(),
-                 'Loss/clf_loss_test_focal': clf_loss_test_focal.item(),
-                 'Loss/weighted_clf_loss_test_focal': self.loss_weight['test_clf_focal']*clf_loss_test_focal.item(),
-                 'mIoU': ious.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'minIoU': ious.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item()}
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/L1_focal": loss_L1_focal.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/L1": loss_L1.item(),
+            "Loss/weighted_L1": self.loss_weight["L1"] * loss_L1.item(),
+            "Loss/clf_loss_test_focal": clf_loss_test_focal.item(),
+            "Loss/weighted_clf_loss_test_focal": self.loss_weight["test_clf_focal"]
+            * clf_loss_test_focal.item(),
+            "mIoU": ious.mean().item(),
+            "maxIoU": ious.max().item(),
+            "minIoU": ious.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+        }
 
         if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
+            stats["stdIoU"] = ious[ious > 0].std().item()
 
         return loss, stats
 
 
-
 # train stage 1
 class ToMPActor_comlossGF(BaseActor):
-    """Actor for training the DiMP network."""
+    """Training actor for the comlossGF variant; loss behavior is retained."""
+
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
         if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
+            loss_weight = {"bb_ce": 1.0}
         self.loss_weight = loss_weight
 
     def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
         if ltrb_pred.dim() == 4:
             ltrb_pred = ltrb_pred.unsqueeze(0)
 
@@ -1100,7 +1469,7 @@ class ToMPActor_comlossGF(BaseActor):
         g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
         p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
 
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
         ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
 
         return ious_pred_center
@@ -1117,51 +1486,408 @@ class ToMPActor_comlossGF(BaseActor):
         """
         # Run network
 
-        target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            train_label=data['train_label'],
-                                            train_ltrb_target=data['train_ltrb_target'])
+        target_scores, bbox_preds = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            train_label=data["train_label"],
+            train_ltrb_target=data["train_ltrb_target"],
+        )
 
-        loss_giou, ious = self.objective['giou'](bbox_preds, data['test_ltrb_target'], data['test_sample_region'])
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, data["test_ltrb_target"], data["test_sample_region"]
+        )
 
         # Classification losses for the different optimization iterations
 
-        clf_loss_test_focal = self.objective['test_clf_focal'](target_scores, data['test_label'], data['test_anno'])
+        clf_loss_test_focal = self.objective["test_clf_focal"](
+            target_scores, data["test_label"], data["test_anno"]
+        )
 
-        loss_giou = self.loss_weight['giou'] * loss_giou
+        loss_giou = self.loss_weight["giou"] * loss_giou
 
-        loss_focal = self.loss_weight['test_clf_focal'] * clf_loss_test_focal
+        loss_focal = self.loss_weight["test_clf_focal"] * clf_loss_test_focal
 
         loss = loss_giou + loss_focal
 
         if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
+            raise ValueError("NaN detected in loss")
 
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
 
-        stats = {'Loss/total': loss.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/clf_loss_test_focal': clf_loss_test_focal.item(),
-                 'Loss/weighted_clf_loss_test_focal': self.loss_weight['test_clf_focal']*clf_loss_test_focal.item(),
-                 'mIoU': ious.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'minIoU': ious.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item()}
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/clf_loss_test_focal": clf_loss_test_focal.item(),
+            "Loss/weighted_clf_loss_test_focal": self.loss_weight["test_clf_focal"]
+            * clf_loss_test_focal.item(),
+            "mIoU": ious.mean().item(),
+            "maxIoU": ious.max().item(),
+            "minIoU": ious.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+        }
 
         if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
+            stats["stdIoU"] = ious[ious > 0].std().item()
 
         return loss, stats
 
-# PiVOT train stage 2
-class ToMPActor_PiVOT(BaseActor):
+
+class DiMPActor(BaseActor):
     """Actor for training the DiMP network."""
+
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
         if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
+            loss_weight = {"iou": 1.0, "test_clf": 1.0}
+        self.loss_weight = loss_weight
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+        # Run network
+        target_scores, iou_pred = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            test_proposals=data["test_proposals"],
+        )
+
+        # Classification losses for the different optimization iterations
+        clf_losses_test = [
+            self.objective["test_clf"](s, data["test_label"], data["test_anno"])
+            for s in target_scores
+        ]
+
+        # Loss of the final filter
+        clf_loss_test = clf_losses_test[-1]
+        loss_target_classifier = self.loss_weight["test_clf"] * clf_loss_test
+
+        # Compute loss for ATOM IoUNet
+        loss_iou = self.loss_weight["iou"] * self.objective["iou"](iou_pred, data["proposal_iou"])
+
+        # Loss for the initial filter iteration
+        loss_test_init_clf = 0
+        if "test_init_clf" in self.loss_weight.keys():
+            loss_test_init_clf = self.loss_weight["test_init_clf"] * clf_losses_test[0]
+
+        # Loss for the intermediate filter iterations
+        loss_test_iter_clf = 0
+        if "test_iter_clf" in self.loss_weight.keys():
+            test_iter_weights = self.loss_weight["test_iter_clf"]
+            if isinstance(test_iter_weights, list):
+                loss_test_iter_clf = sum(
+                    [a * b for a, b in zip(test_iter_weights, clf_losses_test[1:-1])]
+                )
+            else:
+                loss_test_iter_clf = (test_iter_weights / (len(clf_losses_test) - 2)) * sum(
+                    clf_losses_test[1:-1]
+                )
+
+        # loss_test_init_clf = 0
+        # loss_test_iter_clf = 0
+
+        # Total loss
+        loss = loss_iou + loss_target_classifier + loss_test_init_clf + loss_test_iter_clf
+
+        # Log stats
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/iou": loss_iou.item(),
+            "Loss/target_clf": loss_target_classifier.item(),
+        }
+
+        if "test_init_clf" in self.loss_weight.keys():
+            stats["Loss/test_init_clf"] = loss_test_init_clf.item()
+        if "test_iter_clf" in self.loss_weight.keys():
+            stats["Loss/test_iter_clf"] = loss_test_iter_clf.item()
+
+        stats["ClfTrain/test_loss"] = clf_loss_test.item()
+        if len(clf_losses_test) > 0:
+            stats["ClfTrain/test_init_loss"] = clf_losses_test[0].item()
+            if len(clf_losses_test) > 2:
+                stats["ClfTrain/test_iter_loss"] = sum(clf_losses_test[1:-1]).item() / (
+                    len(clf_losses_test) - 2
+                )
+
+        return loss, stats
+
+
+class KLDiMPActor(BaseActor):
+    """Actor for training the DiMP network."""
+
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {"bb_ce": 1.0}
+        self.loss_weight = loss_weight
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+        # Run network
+        target_scores, bb_scores = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            test_proposals=data["test_proposals"],
+        )
+
+        # Reshape bb reg variables
+        is_valid = data["test_anno"][:, :, 0] < 99999.0
+        bb_scores = bb_scores[is_valid, :]
+        proposal_density = data["proposal_density"][is_valid, :]
+        gt_density = data["gt_density"][is_valid, :]
+
+        # Compute loss
+        bb_ce = self.objective["bb_ce"](
+            bb_scores, sample_density=proposal_density, gt_density=gt_density, mc_dim=1
+        )
+        loss_bb_ce = self.loss_weight["bb_ce"] * bb_ce
+
+        # If standard DiMP classifier is used
+        loss_target_classifier = 0
+        loss_test_init_clf = 0
+        loss_test_iter_clf = 0
+        if "test_clf" in self.loss_weight.keys():
+            # Classification losses for the different optimization iterations
+            clf_losses_test = [
+                self.objective["test_clf"](s, data["test_label"], data["test_anno"])
+                for s in target_scores
+            ]
+
+            # Loss of the final filter
+            clf_loss_test = clf_losses_test[-1]
+            loss_target_classifier = self.loss_weight["test_clf"] * clf_loss_test
+
+            # Loss for the initial filter iteration
+            if "test_init_clf" in self.loss_weight.keys():
+                loss_test_init_clf = self.loss_weight["test_init_clf"] * clf_losses_test[0]
+
+            # Loss for the intermediate filter iterations
+            if "test_iter_clf" in self.loss_weight.keys():
+                test_iter_weights = self.loss_weight["test_iter_clf"]
+                if isinstance(test_iter_weights, list):
+                    loss_test_iter_clf = sum(
+                        [a * b for a, b in zip(test_iter_weights, clf_losses_test[1:-1])]
+                    )
+                else:
+                    loss_test_iter_clf = (test_iter_weights / (len(clf_losses_test) - 2)) * sum(
+                        clf_losses_test[1:-1]
+                    )
+
+        # If PrDiMP classifier is used
+        loss_clf_ce = 0
+        loss_clf_ce_init = 0
+        loss_clf_ce_iter = 0
+        if "clf_ce" in self.loss_weight.keys():
+            # Classification losses for the different optimization iterations
+            clf_ce_losses = [
+                self.objective["clf_ce"](s, data["test_label_density"], grid_dim=(-2, -1))
+                for s in target_scores
+            ]
+
+            # Loss of the final filter
+            clf_ce = clf_ce_losses[-1]
+            loss_clf_ce = self.loss_weight["clf_ce"] * clf_ce
+
+            # Loss for the initial filter iteration
+            if "clf_ce_init" in self.loss_weight.keys():
+                loss_clf_ce_init = self.loss_weight["clf_ce_init"] * clf_ce_losses[0]
+
+            # Loss for the intermediate filter iterations
+            if "clf_ce_iter" in self.loss_weight.keys() and len(clf_ce_losses) > 2:
+                test_iter_weights = self.loss_weight["clf_ce_iter"]
+                if isinstance(test_iter_weights, list):
+                    loss_clf_ce_iter = sum(
+                        [a * b for a, b in zip(test_iter_weights, clf_ce_losses[1:-1])]
+                    )
+                else:
+                    loss_clf_ce_iter = (test_iter_weights / (len(clf_ce_losses) - 2)) * sum(
+                        clf_ce_losses[1:-1]
+                    )
+
+        # Total loss
+        loss = (
+            loss_bb_ce
+            + loss_clf_ce
+            + loss_clf_ce_init
+            + loss_clf_ce_iter
+            + loss_target_classifier
+            + loss_test_init_clf
+            + loss_test_iter_clf
+        )
+
+        if torch.isinf(loss) or torch.isnan(loss):
+            raise Exception("ERROR: Loss was nan or inf!!!")
+
+        # Log stats
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/bb_ce": bb_ce.item(),
+            "Loss/loss_bb_ce": loss_bb_ce.item(),
+        }
+        if "test_clf" in self.loss_weight.keys():
+            stats["Loss/target_clf"] = loss_target_classifier.item()
+        if "test_init_clf" in self.loss_weight.keys():
+            stats["Loss/test_init_clf"] = loss_test_init_clf.item()
+        if "test_iter_clf" in self.loss_weight.keys():
+            stats["Loss/test_iter_clf"] = loss_test_iter_clf.item()
+        if "clf_ce" in self.loss_weight.keys():
+            stats["Loss/clf_ce"] = loss_clf_ce.item()
+        if "clf_ce_init" in self.loss_weight.keys():
+            stats["Loss/clf_ce_init"] = loss_clf_ce_init.item()
+        if "clf_ce_iter" in self.loss_weight.keys() and len(clf_ce_losses) > 2:
+            stats["Loss/clf_ce_iter"] = loss_clf_ce_iter.item()
+
+        if "test_clf" in self.loss_weight.keys():
+            stats["ClfTrain/test_loss"] = clf_loss_test.item()
+            if len(clf_losses_test) > 0:
+                stats["ClfTrain/test_init_loss"] = clf_losses_test[0].item()
+                if len(clf_losses_test) > 2:
+                    stats["ClfTrain/test_iter_loss"] = sum(clf_losses_test[1:-1]).item() / (
+                        len(clf_losses_test) - 2
+                    )
+
+        if "clf_ce" in self.loss_weight.keys():
+            stats["ClfTrain/clf_ce"] = clf_ce.item()
+            if len(clf_ce_losses) > 0:
+                stats["ClfTrain/clf_ce_init"] = clf_ce_losses[0].item()
+                if len(clf_ce_losses) > 2:
+                    stats["ClfTrain/clf_ce_iter"] = sum(clf_ce_losses[1:-1]).item() / (
+                        len(clf_ce_losses) - 2
+                    )
+
+        return loss, stats
+
+
+class DiMPSimpleActor(BaseActor):
+    """Actor for training the DiMP network."""
+
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {"bb_ce": 1.0}
+        self.loss_weight = loss_weight
+
+    def __call__(self, data):
+        """
+        args:
+            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
+                    'test_proposals', 'proposal_iou' and 'test_label'.
+        returns:
+            loss    - the training loss
+            stats  -  dict containing detailed losses
+        """
+        # Run network
+        target_scores, bb_scores = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            test_proposals=data["test_proposals"],
+            train_label=data["train_label"],
+        )
+
+        # Reshape bb reg variables
+        is_valid = data["test_anno"][:, :, 0] < 99999.0
+        bb_scores = bb_scores[is_valid, :]
+        proposal_density = data["proposal_density"][is_valid, :]
+        gt_density = data["gt_density"][is_valid, :]
+
+        # Compute loss
+        bb_ce = self.objective["bb_ce"](
+            bb_scores, sample_density=proposal_density, gt_density=gt_density, mc_dim=1
+        )
+        loss_bb_ce = self.loss_weight["bb_ce"] * bb_ce
+
+        loss_test_init_clf = 0
+        loss_test_iter_clf = 0
+
+        # Classification losses for the different optimization iterations
+        clf_losses_test = [
+            self.objective["test_clf"](s, data["test_label"], data["test_anno"])
+            for s in target_scores
+        ]
+
+        # Loss of the final filter
+        clf_loss_test = clf_losses_test[-1]
+        loss_target_classifier = self.loss_weight["test_clf"] * clf_loss_test
+
+        # Loss for the initial filter iteration
+        if "test_init_clf" in self.loss_weight.keys():
+            loss_test_init_clf = self.loss_weight["test_init_clf"] * clf_losses_test[0]
+
+        # Loss for the intermediate filter iterations
+        if "test_iter_clf" in self.loss_weight.keys():
+            test_iter_weights = self.loss_weight["test_iter_clf"]
+            if isinstance(test_iter_weights, list):
+                loss_test_iter_clf = sum(
+                    [a * b for a, b in zip(test_iter_weights, clf_losses_test[1:-1])]
+                )
+            else:
+                loss_test_iter_clf = (test_iter_weights / (len(clf_losses_test) - 2)) * sum(
+                    clf_losses_test[1:-1]
+                )
+
+        # Total loss
+        loss = loss_bb_ce + loss_target_classifier + loss_test_init_clf + loss_test_iter_clf
+
+        if torch.isinf(loss) or torch.isnan(loss):
+            raise Exception("ERROR: Loss was nan or inf!!!")
+
+        # Log stats
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/bb_ce": bb_ce.item(),
+            "Loss/loss_bb_ce": loss_bb_ce.item(),
+        }
+        if "test_clf" in self.loss_weight.keys():
+            stats["Loss/target_clf"] = loss_target_classifier.item()
+        if "test_init_clf" in self.loss_weight.keys():
+            stats["Loss/test_init_clf"] = loss_test_init_clf.item()
+        if "test_iter_clf" in self.loss_weight.keys():
+            stats["Loss/test_iter_clf"] = loss_test_iter_clf.item()
+
+        if "test_clf" in self.loss_weight.keys():
+            stats["ClfTrain/test_loss"] = clf_loss_test.item()
+            if len(clf_losses_test) > 0:
+                stats["ClfTrain/test_init_loss"] = clf_losses_test[0].item()
+                if len(clf_losses_test) > 2:
+                    stats["ClfTrain/test_iter_loss"] = sum(clf_losses_test[1:-1]).item() / (
+                        len(clf_losses_test) - 2
+                    )
+
+        return loss, stats
+
+
+# -----------------------------------------------------------------------------
+# Legacy trackers: PiVOT, CLIP, KYS and candidate matching
+# -----------------------------------------------------------------------------
+
+
+# PiVOT train stage 2
+class ToMPActor_PiVOT(BaseActor):
+    """Training actor for the PiVOT variant; loss behavior is retained."""
+
+    def __init__(self, net, objective, loss_weight=None):
+        super().__init__(net, objective)
+        if loss_weight is None:
+            loss_weight = {"bb_ce": 1.0}
         self.loss_weight = loss_weight
         print("loss init")
 
@@ -1171,30 +1897,27 @@ class ToMPActor_PiVOT(BaseActor):
         # self.pre_loss_giou_hint_bbox_preds = torch.tensor(1)
 
     def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
-        # print("ltrb_pred", ltrb_pred)
-        # print("ltrb_gth", ltrb_gth)
-        # print("ltrb_gth.shape", ltrb_gth.shape) # 1 1 4 18 18
-        # input()
+        """Evaluate box IoU at the score-map position selected by this actor.
+
+        Input:
+            scores: (1, B, H, W); ltrb_gth: (1, B, 4, H, W).
+            ltrb_pred: (1, B, 4, H, W) or (B, 4, H, W).
+        Output:
+            Per-sequence IoUs from the configured giou objective, with invalid
+            target boxes masked according to the original implementation.
+        """
         if ltrb_pred.dim() == 4:
             ltrb_pred = ltrb_pred.unsqueeze(0)
-        # print("ltrb_pred", ltrb_pred)
-        # print("ltrb_pred.shape", ltrb_pred.shape) # 1 1 4 18 18
-        # input()
+
         n = scores.shape[1]
         ids = scores.reshape(1, n, -1).max(dim=2)[1]
-        # print("ids", ids)
+
         ids = 1
-        # print("torch.max(ltrb_gth)", torch.max(ltrb_gth))
-        # print("torch.min(ltrb_gth)", torch.min(ltrb_gth))
-        # print("scores.shape", scores.shape) # 1, 1, 18, 18]
-        # input()
 
         g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
         p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
-        # print("g", g)
-        # print("p", p)
-        # input()
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
+
+        _, ious_pred_center = self.objective["giou"](p, g)  # nf x ns x x 4 x h x w
         ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
 
         return ious_pred_center
@@ -1210,835 +1933,449 @@ class ToMPActor_PiVOT(BaseActor):
         """
         # Run network
 
-        target_scores, bbox_preds, prob_map = self.net(train_imgs=data['train_images'],
-                                             test_imgs=data['test_images'],
-                                             train_bb=data['train_anno'],
-                                             train_label=data['train_label'],
-                                             train_ltrb_target=data['train_ltrb_target'])
+        target_scores, bbox_preds, prob_map = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            train_label=data["train_label"],
+            train_ltrb_target=data["train_ltrb_target"],
+        )
 
-
-        loss_giou, ious = self.objective['giou'](bbox_preds, data['test_ltrb_target'], data['test_sample_region'])
-
-        # print("bbox_preds.shape", bbox_preds.shape)
+        loss_giou, ious = self.objective["giou"](
+            bbox_preds, data["test_ltrb_target"], data["test_sample_region"]
+        )
 
         # Classification losses for the different optimization iterations
-        clf_loss_test = self.objective['test_clf'](target_scores, data['test_label'], data['test_anno'])
+        clf_loss_test = self.objective["test_clf"](
+            target_scores, data["test_label"], data["test_anno"]
+        )
 
+        clf_prob_map = self.objective["test_clf"](prob_map, data["test_label"], data["test_anno"])
 
-        ### LBHinge prob_map
-        clf_prob_map = self.objective['test_clf'](prob_map, data['test_label'], data['test_anno'])
-
-
-        loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test +\
-                                                    + self.loss_weight['probmap_clf'] * clf_prob_map
-
+        loss = (
+            self.loss_weight["giou"] * loss_giou
+            + self.loss_weight["test_clf"] * clf_loss_test
+            + +self.loss_weight["probmap_clf"] * clf_prob_map
+        )
 
         if torch.isnan(loss):
             print("clf_loss_test", clf_loss_test)
             print("clf_prob_map", clf_prob_map)
-            # print("loss_giou_hint_bbox_preds", loss_giou_hint_bbox_preds)
 
-            raise ValueError('NaN detected in loss')
+            raise ValueError("NaN detected in loss")
 
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
+        ious_pred_center = self.compute_iou_at_max_score_pos(
+            target_scores, data["test_ltrb_target"], bbox_preds
+        )
 
-        stats = {'Loss/total': loss.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/clf_loss_test': clf_loss_test.item(),
-
-                 'Loss/clf_prob_map': self.loss_weight['probmap_clf']*clf_prob_map.item(),
-
-                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
-                 'mIoU': ious.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'minIoU': ious.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item()
-                 
-                 }
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/GIoU": loss_giou.item(),
+            "Loss/weighted_GIoU": self.loss_weight["giou"] * loss_giou.item(),
+            "Loss/clf_loss_test": clf_loss_test.item(),
+            "Loss/clf_prob_map": self.loss_weight["probmap_clf"] * clf_prob_map.item(),
+            "Loss/weighted_clf_loss_test": self.loss_weight["test_clf"] * clf_loss_test.item(),
+            "mIoU": ious.mean().item(),
+            "maxIoU": ious.max().item(),
+            "minIoU": ious.min().item(),
+            "mIoU_pred_center": ious_pred_center.mean().item(),
+        }
 
         if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
+            stats["stdIoU"] = ious[ious > 0].std().item()
 
         return loss, stats
 
 
-### Joint Training of the GOT-JEPA Point Tracker
-class ToMPActor_PT(BaseActor):
+class DiMPActor_clip(BaseActor):
     """Actor for training the DiMP network."""
+
     def __init__(self, net, objective, loss_weight=None):
         super().__init__(net, objective)
         if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
+            loss_weight = {"iou": 1.0, "test_clf": 1.0}
         self.loss_weight = loss_weight
-
-    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
-
-        # print("ltrb_gth.shape", ltrb_gth.shape) # 
-        # print("ltrb_pred.shape", ltrb_pred.shape) #
-
-        if ltrb_pred.dim() == 4:
-            ltrb_pred = ltrb_pred.unsqueeze(0)
-
-        n = scores.shape[1]
-        ids = scores.reshape(1, n, -1).max(dim=2)[1]
-        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
-        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
-
-        # print("g.shape", g.shape) # torch.Size([1, 1, 4, 1, 1])
-        # print("p.shape", p.shape) # torch.Size([1, 1, 4, 1, 1])
-
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
-
-        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
-
-        return ious_pred_center
-
-
 
     def __call__(self, data):
         """
         args:
             data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
                     'test_proposals', 'proposal_iou' and 'test_label'.
-
         returns:
             loss    - the training loss
             stats  -  dict containing detailed losses
         """
-
-        train_imgs_all_ = data['train_images']
-        test_imgs_all_ = data['test_images']
-        train_bb_in = data['train_anno']
-        train_label_ = data['train_label']
-        train_ltrb_target_ = data['train_ltrb_target']
-        test_ltrb_target = data['test_ltrb_target']
-        test_sample_region_ = data['test_sample_region']
-        test_label_ = data['test_label']
-        test_anno_ = data['test_anno']
-
-        test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
-
-        # print("train_label_.shape",  train_label_.shape) # torch.Size([10, 3, 27, 27])
-
-        # Assuming train_imgs_all_ has twice the number of elements as test_imgs_all_
-
-        # print("test_imgs_all_",len(test_imgs_all_)) 
-        # input()
-
-        half_length = int(len(train_imgs_all_)/2)
-        # print("half_length", half_length)
-
-        train_bb_first_  = torch.cat((train_bb_in[0].unsqueeze(0), train_bb_in[half_length].unsqueeze(0)), dim=0)
-        train_bb_last_ = torch.cat((train_bb_in[half_length - 1].unsqueeze(0), train_bb_in[-1].unsqueeze(0)), dim=0)
-        train_label_last = torch.cat((train_label_[half_length - 1].unsqueeze(0), train_label_[-1].unsqueeze(0)), dim=0)
-        train_label_first_ = torch.cat((train_label_[0].unsqueeze(0), train_label_[half_length].unsqueeze(0)), dim=0)
-        train_imgs_ = torch.cat((train_imgs_all_[half_length - 1].unsqueeze(0), train_imgs_all_[-1].unsqueeze(0)), dim=0)
-        train_ltrb_target_ = torch.cat((train_ltrb_target_[half_length - 1].unsqueeze(0), train_ltrb_target_[-1].unsqueeze(0)), dim=0)
-
-        test_bb_ = test_anno_[-1].unsqueeze(0)
-        test_bb_first_  = test_anno_[0].unsqueeze(0)
-
-        test_sample_region_ = test_sample_region_[-1].unsqueeze(0)
-        test_anno_ = test_anno_[-1].unsqueeze(0)
-
-        test_label_last_ = data['test_label'][-1].unsqueeze(0)
-
-        test_label_first_ = data['test_label'][0].unsqueeze(0) # second dim is batch
-        test_label_mid = data['test_label'][len(data) // 2].unsqueeze(0)
-        # test_label_first_ = data['test_label'][0:6] # seq
-        # test_label_mid = None
-
-
-        test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
-
-        test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
-        test_ltrb_target_mid_ = test_ltrb_target[len(data) // 2].unsqueeze(0)
-        
-
-        target_scores, bbox_preds = self.net( \
-                                            train_imgs=train_imgs_,
-                                             test_imgs=test_imgs_,
-                                             train_imgs_all=train_imgs_all_,
-                                             test_imgs_all=test_imgs_all_,
-                                             train_bb=train_bb_last_, 
-                                             train_bb_first = train_bb_first_,
-                                             test_bb_first=test_bb_first_,
-                                             train_label=train_label_last,
-                                             train_label_first=train_label_first_,
-                                             test_label_first=test_label_first_,
-                                             test_label_mid=test_label_mid,
-                                             train_ltrb_target=train_ltrb_target_,
-                                             test_ltrb_target_first=test_ltrb_target_first_,
-                                             test_ltrb_target_mid=test_ltrb_target_mid_,
-                                             )
-
-        loss_giou, ious = self.objective['giou'](bbox_preds, test_ltrb_target_, test_sample_region_)
-
-        clf_loss_test = self.objective['test_clf'](target_scores, test_label_last_, test_anno_)
-        # track_clf_loss_test = self.objective['test_clf'](track_scores, test_label_last_, test_anno_)
-
-        loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
-        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
-        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * track_clf_loss_test
-
-        # loss = 0.01 * loss_giou + 0.01 * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
-
-        if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
-
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
-        # track_ious_pred_center = self.compute_iou_at_max_score_pos(track_scores, data['test_ltrb_target'], bbox_preds)
-
-        # print("data['test_ltrb_target']", data['test_ltrb_target'])
-        # input()
-
-        stats = {'Loss/total': loss.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/clf_loss_test': clf_loss_test.item(),
-                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
-                 'mIoU': ious.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'minIoU': ious.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item(),
-
-                 }
-
-        if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
-
-        return loss, stats
-        
-
-### Joint Training of the GOT-JEPA Point Tracker
-class ToMPActor_PTcurq2(BaseActor):
-    """Actor for training the DiMP network."""
-    def __init__(self, net, objective, loss_weight=None):
-        super().__init__(net, objective)
-        if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
-        self.loss_weight = loss_weight
-
-    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
-
-        if ltrb_pred.dim() == 4:
-            ltrb_pred = ltrb_pred.unsqueeze(0)
-
-        n = scores.shape[1]
-        ids = scores.reshape(1, n, -1).max(dim=2)[1]
-        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
-        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
-
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
-
-        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
-
-        return ious_pred_center
-
-    def __call__(self, data):
-        """
-        args:
-            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
-                    'test_proposals', 'proposal_iou' and 'test_label'.
-
-        returns:
-            loss    - the training loss
-            stats  -  dict containing detailed losses
-        """
-
-        train_imgs_all_ = data['train_images']
-        test_imgs_all_ = data['test_images']
-        train_bb_in = data['train_anno']
-        train_label_ = data['train_label']
-        train_ltrb_target_ = data['train_ltrb_target']
-        test_ltrb_target = data['test_ltrb_target']
-        test_sample_region_ = data['test_sample_region']
-        test_label_ = data['test_label']
-        test_anno_ = data['test_anno']
-
-        # print("test_anno_.shape", test_anno_.shape) # torch.Size([8, 3, 4])
-        # print("len(test_anno_) // 2", len(test_anno_) // 2) # 4
-        # print("len(test_anno_)", len(test_anno_))  # 8
-        # print("len(data)", len(data))  #13
-        # print("len(train_imgs_all_)", len(train_imgs_all_))  # 16
-        # print("train_imgs_all_.shape", train_imgs_all_.shape) # torch.Size([16, 3, 3, 432, 432])
-        # print("len(data['test_label'])", len(data['test_label']))  # 8
-        # print("data['test_label'].shape", data['test_label'].shape)  # torch.Size([8, 3, 27, 27])
-        # print("len(test_ltrb_target)", len(test_ltrb_target))  # 8
-        # print("test_ltrb_target.shape", test_ltrb_target.shape)  # torch.Size([8, 3, 4, 27, 27])
-
-        test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
-
-        half_length = int(len(train_imgs_all_)/2)
-
-        # train_bb_first_  = torch.cat((train_bb_in[0].unsqueeze(0), train_bb_in[half_length].unsqueeze(0)), dim=0)
-        train_bb_last_ = torch.cat((train_bb_in[half_length - 1].unsqueeze(0), train_bb_in[-1].unsqueeze(0)), dim=0)
-        train_label_last = torch.cat((train_label_[half_length - 1].unsqueeze(0), train_label_[-1].unsqueeze(0)), dim=0)
-        # train_label_first_ = torch.cat((train_label_[0].unsqueeze(0), train_label_[half_length].unsqueeze(0)), dim=0)
-        train_imgs_ = torch.cat((train_imgs_all_[half_length - 1].unsqueeze(0), train_imgs_all_[-1].unsqueeze(0)), dim=0)
-        train_ltrb_target_ = torch.cat((train_ltrb_target_[half_length - 1].unsqueeze(0), train_ltrb_target_[-1].unsqueeze(0)), dim=0)
-
-        test_bb_ = test_anno_[-1].unsqueeze(0)
-
-        test_bb_first_  = test_anno_[0].unsqueeze(0)
-        test_bb_mid_  = test_anno_[len(test_anno_) // 2].unsqueeze(0)
-
-        test_sample_region_ = test_sample_region_[-1].unsqueeze(0)
-        test_anno_ = test_anno_[-1].unsqueeze(0)
-
-        test_label_last_ = data['test_label'][-1].unsqueeze(0)
-
-        test_label_first_ = data['test_label'][0].unsqueeze(0) # second dim is batch
-        test_label_mid = data['test_label'][len(test_anno_) // 2].unsqueeze(0)
-        # print("check_here")
-
-        test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
-
-        # test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
-        # test_ltrb_target_mid_ = test_ltrb_target[len(test_anno_) // 2].unsqueeze(0)
-
-        target_scores, bbox_preds, target_scores_PT, bbox_preds_PT = self.net( \
-                                        train_imgs=train_imgs_,
-                                        test_imgs=test_imgs_,
-                                        train_imgs_all=train_imgs_all_,
-                                        test_imgs_all=test_imgs_all_,
-                                        train_bb=train_bb_last_, 
-                                        # train_bb_first = train_bb_first_,
-                                        test_bb_first=test_bb_first_,
-                                        test_bb_mid=test_bb_mid_,
-                                        train_label=train_label_last,
-                                        # train_label_first=train_label_first_,
-                                        test_label_first=test_label_first_,
-                                        test_label_mid=test_label_mid,
-                                        train_ltrb_target=train_ltrb_target_,
-                                        # test_ltrb_target_first=test_ltrb_target_first_,
-                                        # test_ltrb_target_mid=test_ltrb_target_mid_,
-                                        )
-
-
-        loss_giou, ious = self.objective['giou'](bbox_preds, test_ltrb_target_, test_sample_region_)
-
-        loss_giou_PT, ious_PT = self.objective['giou'](bbox_preds_PT, test_ltrb_target_, test_sample_region_)
-
-
-        clf_loss_test = self.objective['test_clf'](target_scores, test_label_last_, test_anno_)
-        clf_loss_test_PT = self.objective['test_clf'](target_scores_PT, test_label_last_, test_anno_)
-        loss_ToMP = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
-        loss_PT = self.loss_weight['giouPT'] * loss_giou_PT + self.loss_weight['test_clfPT'] * clf_loss_test_PT
-
-        loss = loss_ToMP + loss_PT
-               
-        if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
-
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
-        ious_pred_centerPT = self.compute_iou_at_max_score_pos(target_scores_PT, data['test_ltrb_target'], bbox_preds)
-
-
-        stats = {'Loss/total': loss.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/GIoUPT': loss_giou_PT.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                 'Loss/weighted_GIoUPT': self.loss_weight['giouPT']*loss_giou_PT.item(),
-                 'Loss/clf_loss_test': clf_loss_test.item(),
-                 'Loss/clf_loss_testPT': clf_loss_test_PT.item(),
-                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
-                 'Loss/weighted_clf_loss_testPT': self.loss_weight['test_clfPT']*clf_loss_test_PT.item(),
-                 'mIoU': ious.mean().item(),
-                 'mIoUPT': ious_PT.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'maxIoUPT': ious_PT.max().item(),
-                 'minIoU': ious.min().item(),
-                 'minIoUPT': ious_PT.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item(),
-                 'mIoU_pred_centerPT': clf_loss_test_PT.mean().item(),
-                'Loss/loss_ToMP': loss_ToMP.item(),
-                'Loss/loss_PT': loss_PT.item(),   
-                 }
-
-        if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
-
-        return loss, stats
-        
-
-### Joint Training of the GOT-JEPA Point Tracker
-class ToMPActor_PTcur(BaseActor):
-    """Actor for training the DiMP network."""
-    def __init__(self, net, objective, loss_weight=None):
-        super().__init__(net, objective)
-        if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
-        self.loss_weight = loss_weight
-
-    def compute_iou_at_max_score_pos(self, scores, ltrb_gth, ltrb_pred):
-
-        # print("ltrb_gth.shape", ltrb_gth.shape) # 
-        # print("ltrb_pred.shape", ltrb_pred.shape) #
-
-        if ltrb_pred.dim() == 4:
-            ltrb_pred = ltrb_pred.unsqueeze(0)
-
-        n = scores.shape[1]
-        ids = scores.reshape(1, n, -1).max(dim=2)[1]
-        g = ltrb_gth.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
-        p = ltrb_pred.flatten(3)[0, torch.arange(0, n), :, ids].view(1, n, 4, 1, 1)
-
-        # print("g.shape", g.shape) # torch.Size([1, 1, 4, 1, 1])
-        # print("p.shape", p.shape) # torch.Size([1, 1, 4, 1, 1])
-
-        _, ious_pred_center = self.objective['giou'](p, g) # nf x ns x x 4 x h x w
-
-        ious_pred_center[g.view(n, 4).min(dim=1)[0] < 0] = 0
-
-        return ious_pred_center
-
-
-    def __call__(self, data):
-        """
-        args:
-            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
-                    'test_proposals', 'proposal_iou' and 'test_label'.
-
-        returns:
-            loss    - the training loss
-            stats  -  dict containing detailed losses
-        """
-
-        train_imgs_all_ = data['train_images']
-        test_imgs_all_ = data['test_images']
-        train_bb_in = data['train_anno']
-        train_label_ = data['train_label']
-        train_ltrb_target_ = data['train_ltrb_target']
-        test_ltrb_target = data['test_ltrb_target']
-        test_sample_region_ = data['test_sample_region']
-        test_label_ = data['test_label']
-        test_anno_ = data['test_anno']
-
-        test_imgs_ = test_imgs_all_[-1].unsqueeze(0)
-
-        # print("train_label_.shape",  train_label_.shape) # torch.Size([10, 3, 27, 27])
-
-        # Assuming train_imgs_all_ has twice the number of elements as test_imgs_all_
-
-        # print("test_imgs_all_",len(test_imgs_all_)) 
-        # input()
-
-        half_length = int(len(train_imgs_all_)/2)
-        # print("half_length", half_length)
-
-        train_bb_first_  = torch.cat((train_bb_in[0].unsqueeze(0), train_bb_in[half_length].unsqueeze(0)), dim=0)
-        train_bb_last_ = torch.cat((train_bb_in[half_length - 1].unsqueeze(0), train_bb_in[-1].unsqueeze(0)), dim=0)
-        train_label_last = torch.cat((train_label_[half_length - 1].unsqueeze(0), train_label_[-1].unsqueeze(0)), dim=0)
-        train_label_first_ = torch.cat((train_label_[0].unsqueeze(0), train_label_[half_length].unsqueeze(0)), dim=0)
-        train_imgs_ = torch.cat((train_imgs_all_[half_length - 1].unsqueeze(0), train_imgs_all_[-1].unsqueeze(0)), dim=0)
-        train_ltrb_target_ = torch.cat((train_ltrb_target_[half_length - 1].unsqueeze(0), train_ltrb_target_[-1].unsqueeze(0)), dim=0)
-
-        test_bb_ = test_anno_[-1].unsqueeze(0)
-        test_bb_first_  = test_anno_[0].unsqueeze(0)
-
-        test_sample_region_ = test_sample_region_[-1].unsqueeze(0)
-        test_anno_ = test_anno_[-1].unsqueeze(0)
-
-        test_label_last_ = data['test_label'][-1].unsqueeze(0)
-
-        test_label_first_ = data['test_label'][0].unsqueeze(0) # second dim is batch
-        test_label_mid = data['test_label'][len(test_anno_) // 2].unsqueeze(0)
-        # test_label_first_ = data['test_label'][0:6] # seq
-        # test_label_mid = None
-
-
-        test_ltrb_target_ = test_ltrb_target[-1].unsqueeze(0)
-
-        test_ltrb_target_first_ = test_ltrb_target[0].unsqueeze(0)
-        test_ltrb_target_mid_ = test_ltrb_target[len(test_anno_) // 2].unsqueeze(0)
-        # test_ltrb_target_first_ = test_ltrb_target[0:6] # seq
-        # test_ltrb_target_mid_ = None
-
-        # print("test_labels.shape", test_labels.shape)  # 1 3 B 18 18
-        # input()
-
-        # print("len(train_imgs_all_)",  len(train_imgs_all_))
-        # print("len(test_imgs_all_)",  len(test_imgs_all_))
-        # Print shapes # 3 batch num_train_frames = 5*2 num_test_frames = 5
-
-
-        # print("train_imgs_all_.shape", train_imgs_all_.shape)  # torch.Size([10, 3, 3, 432, 432])
-        # print("test_imgs_all_.shape", test_imgs_all_.shape)  # torch.Size([5, 3, 3, 432, 432])
-
-        # print("train_bb_first_.shape", train_bb_first_.shape)  # torch.Size([2, 3, 4])
-        # print("train_bb_last_.shape", train_bb_last_.shape)  # torch.Size([2, 3, 4])
-        # print("train_label_last.shape", train_label_last.shape)  # torch.Size([2, 3, 27, 27])
-        # print("train_label_first_.shape", train_label_first_.shape)  # torch.Size([2, 3, 27, 27])
-        # print("train_imgs_.shape", train_imgs_.shape)  # torch.Size([2, 3, 3, 432, 432])
-        # print("train_ltrb_target_.shape", train_ltrb_target_.shape)  # torch.Size([2, 3, 4, 27, 27])
-
-        # print("test_bb_.shape", test_bb_.shape)  # torch.Size([1, 3, 4])
-        # print("test_bb_first_.shape", test_bb_first_.shape)  # torch.Size([1, 3, 4])
-
-        # print("test_sample_region_.shape", test_sample_region_.shape)  # torch.Size([1, 3, 1, 27, 27])
-        # print("test_anno_.shape", test_anno_.shape)  # torch.Size([1, 3, 4])
-
-        # print("test_imgs_.shape", test_imgs_.shape)  # torch.Size([1, 3, 3, 432, 432])
-
-
-        # print("test_ltrb_target.shape", test_ltrb_target.shape)  # torch.Size([8, B, 4, 18, 18])
-        # print("test_ltrb_target_first_.shape", test_ltrb_target_first_.shape)  # torch.Size([6, B, 4, 18, 18])
-
-        # print("test_ltrb_target_.shape", test_ltrb_target_.shape)  # torch.Size([1, B, 4, 27, 27])
-        # print("test_ltrb_target_mid_.shape", test_ltrb_target_mid_.shape)  # torch.Size([1, B, 4, 27, 27])
-
-        # print("test_label_.shape", test_label_.shape)  # torch.Size([8, B, 18, 18])
-        # print("test_label_first_.shape", test_label_first_.shape)  # torch.Size([6, B, 18, 18])
-
-
-        # input()
-
         # Run network
-        # target_scores, bbox_preds = self.net(train_imgs=data['train_images'],
-        #                                      test_imgs=data['test_images'],
-        #                                      train_bb=data['train_anno'],
-        #                                      train_label=data['train_label'],
-        #                                      train_ltrb_target=data['train_ltrb_target'])
-
-        target_scores, bbox_preds, target_scores_PT, bbox_preds_PT = self.net( \
-        # target_scores, bbox_preds, PT_LTRB = self.net( \
-        # target_scores, track_scores, bbox_preds = self.net( \
-                                            train_imgs=train_imgs_,
-                                             test_imgs=test_imgs_,
-                                             train_imgs_all=train_imgs_all_,
-                                             test_imgs_all=test_imgs_all_,
-                                             train_bb=train_bb_last_, 
-                                             train_bb_first = train_bb_first_,
-                                             test_bb_first=test_bb_first_,
-                                             train_label=train_label_last,
-                                             train_label_first=train_label_first_,
-                                             test_label_first=test_label_first_,
-                                             test_label_mid=test_label_mid,
-                                             train_ltrb_target=train_ltrb_target_,
-                                             test_ltrb_target_first=test_ltrb_target_first_,
-                                             test_ltrb_target_mid=test_ltrb_target_mid_,
-                                             )
-
-        # print("test_ltrb_target_.shape", test_ltrb_target_.shape) # torch.Size([1, 3, 4, 27, 27])
-        # print("test_sample_region_.shape", test_sample_region_.shape) # torch.Size([1, 3, 1, 27, 27])
-        # print("bbox_preds.shape", bbox_preds.shape) # torch.Size([1, 3, 4, 27, 27])
-
-        loss_giou, ious = self.objective['giou'](bbox_preds, test_ltrb_target_, test_sample_region_)
-
-        loss_giou_PT, ious_PT = self.objective['giou'](bbox_preds_PT, test_ltrb_target_, test_sample_region_)
-
-        # im_size = bbox_preds.shape[-1]*14
-        # PT_loss_giou = self.compute_iou_PT(test_anno_, PT_LTRB, im_size)
-
-        # print("PT_LTRB", PT_LTRB) #
-        # print("test_ltrb_target_", test_ltrb_target_) #
-        # input()
+        target_scores, iou_pred = self.net(
+            train_imgs=data["train_images"],
+            test_imgs=data["test_images"],
+            train_bb=data["train_anno"],
+            test_proposals=data["test_proposals"],
+        )
 
         # Classification losses for the different optimization iterations
+        clf_losses_test = [
+            self.objective["test_clf"](s, data["test_label"], data["test_anno"])
+            for s in target_scores
+        ]
 
-        # print("test_anno_.shape", test_anno_.shape) # torch.Size([1, 3, 4]) # xywz
-        # print("test_anno_", test_anno_) # 
-        # print("test_label_.shape", test_label_.shape) # torch.Size([32, 3, 27, 27])
-        # print("test_label_last_.shape", test_label_last_.shape) # torch.Size([1, 3, 27, 27])
-        # print("target_scores.shape", target_scores.shape) # test_label_.shape torch.Size([1, 3, 27, 27])
-        # input()
+        # Compute loss for ATOM IoUNet
+        loss_iou = self.loss_weight["iou"] * self.objective["iou"](iou_pred, data["proposal_iou"])
 
-        clf_loss_test = self.objective['test_clf'](target_scores, test_label_last_, test_anno_)
-        clf_loss_test_PT = self.objective['test_clf'](target_scores_PT, test_label_last_, test_anno_)
-        # track_clf_loss_test = self.objective['test_clf'](track_scores, test_label_last_, test_anno_)
+        # Loss Clf :a aaa a-1 dclip fuse
 
-        loss_ToMP = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test
-        # loss_PT = self.loss_weight['giou'] * loss_giou_PT + self.loss_weight['test_clf'] * clf_loss_test_PT
-        loss_PT = self.loss_weight['giouPT'] * loss_giou_PT + self.loss_weight['test_clfPT'] * clf_loss_test_PT
+        # Loss for the initial filter iteration
+        loss_test_init_clf = 0
+        loss_test_init_clf = self.loss_weight["test_init_clf"] * clf_losses_test[0]
 
-        loss = loss_ToMP + loss_PT
-               
+        # Loss for the intermediate filter iterations
+        loss_test_iter_clf = 0
+        test_iter_weights = self.loss_weight["test_iter_clf"]
 
-        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
-        # loss = self.loss_weight['giou'] * loss_giou + self.loss_weight['test_clf'] * track_clf_loss_test
+        if isinstance(test_iter_weights, list):
+            loss_test_iter_clf = sum(
+                [a * b for a, b in zip(test_iter_weights, clf_losses_test[1:-3])]
+            )
+        else:
+            loss_test_iter_clf = (test_iter_weights / (len(clf_losses_test) - 4)) * sum(
+                clf_losses_test[1:-3]
+            )
 
-        # loss = 0.01 * loss_giou + 0.01 * clf_loss_test +  self.loss_weight['giou'] * PT_loss_giou
+        # Loss of the final dimp filter
+        loss_test_final_dimp_clf = 0
+        clf_loss_test_final_dimp = clf_losses_test[-3]
+        loss_test_final_dimp_clf = (
+            self.loss_weight["test_final_dimp_clf"] * clf_loss_test_final_dimp
+        )
 
-        if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
+        # Loss of the dclip_clf
+        loss_test_dclip_clf = 0
+        clf_target_dclip_classifier_test = clf_losses_test[-2]
+        loss_test_dclip_clf = self.loss_weight["test_dclip_clf"] * clf_target_dclip_classifier_test
 
-        ious_pred_center = self.compute_iou_at_max_score_pos(target_scores, data['test_ltrb_target'], bbox_preds)
-        ious_pred_centerPT = self.compute_iou_at_max_score_pos(target_scores_PT, data['test_ltrb_target'], bbox_preds)
-        # track_ious_pred_center = self.compute_iou_at_max_score_pos(track_scores, data['test_ltrb_target'], bbox_preds)
+        # Loss of the final filter fuse_dclip_clf
+        loss_target_classifier = 0
+        clf_loss_test = clf_losses_test[-1]
+        loss_target_classifier = self.loss_weight["test_clf"] * clf_loss_test
 
-        # print("data['test_ltrb_target']", data['test_ltrb_target'])
-        # input()
+        # Total loss
+        loss = (
+            loss_iou
+            + loss_test_init_clf
+            + loss_test_iter_clf
+            + loss_test_final_dimp_clf
+            + loss_test_dclip_clf
+            + loss_target_classifier
+        )
 
-        stats = {'Loss/total': loss.item(),
-                 'Loss/GIoU': loss_giou.item(),
-                 'Loss/GIoUPT': loss_giou_PT.item(),
-                 'Loss/weighted_GIoU': self.loss_weight['giou']*loss_giou.item(),
-                #  'Loss/weighted_GIoUPT': self.loss_weight['giou']*loss_giou_PT.item(),
-                 'Loss/weighted_GIoUPT': self.loss_weight['giouPT']*loss_giou_PT.item(),
-                 'Loss/clf_loss_test': clf_loss_test.item(),
-                 'Loss/clf_loss_testPT': clf_loss_test_PT.item(),
-                 'Loss/weighted_clf_loss_test': self.loss_weight['test_clf']*clf_loss_test.item(),
-                #  'Loss/weighted_clf_loss_testPT': self.loss_weight['test_clf']*clf_loss_test_PT.item(),
-                 'Loss/weighted_clf_loss_testPT': self.loss_weight['test_clfPT']*clf_loss_test_PT.item(),
-                 'mIoU': ious.mean().item(),
-                 'mIoUPT': ious_PT.mean().item(),
-                 'maxIoU': ious.max().item(),
-                 'maxIoUPT': ious_PT.max().item(),
-                 'minIoU': ious.min().item(),
-                 'minIoUPT': ious_PT.min().item(),
-                 'mIoU_pred_center': ious_pred_center.mean().item(),
-                 'mIoU_pred_centerPT': clf_loss_test_PT.mean().item(),
-                'Loss/loss_ToMP': loss_ToMP.item(),
-                'Loss/loss_PT': loss_PT.item(),
-                #
-                #  'Loss/PTGIoU': PT_loss_giou.item(),
-                #  'Loss/weighted_PTGIoU': self.loss_weight['giou']*PT_loss_giou.item(),
-                #  'Loss/track_clf_loss_test': track_clf_loss_test.item(),
-                #  'Loss/weighted_track_clf_loss_test': self.loss_weight['test_clf']*track_clf_loss_test.item(),
-                #  'track_ious_pred_center': track_ious_pred_center.mean().item(),           
-                 }
+        # Log stats
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/iou": loss_iou.item(),
+            "Loss/target_clf": loss_target_classifier.item(),
+        }
 
-        if ious.max().item() > 0:
-            stats['stdIoU'] = ious[ious>0].std().item()
+        if "test_init_clf" in self.loss_weight.keys():
+            stats["Loss/test_init_clf"] = loss_test_init_clf.item()
+        if "test_iter_clf" in self.loss_weight.keys():
+            stats["Loss/test_iter_clf"] = loss_test_iter_clf.item()
+        if "test_final_dimp_clf" in self.loss_weight.keys():
+            stats["Loss/test_final_dimp_clf"] = loss_test_final_dimp_clf.item()
+        if "test_dclip_clf" in self.loss_weight.keys():
+            stats["Loss/test_dclip_clf"] = loss_test_dclip_clf.item()
 
-        return loss, stats
-### PT   
-
-
-
-# GOT-JEPA model predictor pretraining
-class ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp(BaseActor):
-    """Actor for training the DiMP network."""
-    def __init__(self, net, objective, loss_weight=None):
-        super().__init__(net, objective)
-        if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
-        self.loss_weight = loss_weight
-
-        print("ToMPActor_JEPAs1_vicregExpwovc400x_norm2_cexp")
-
-    def off_diagonal(self, x):
-        n, m = x.shape
-        assert n == m
-        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
-
-    def loss_fn(self, x, xExp, xp, y):
-
-        # x --> cls_filter_context 
-        # xExp -->  cls_filter_context_Exp
-        # xp -->  cls_filter_context_p
-        # y -->  cls_filter_target
-        # yExp -->  cls_filter_target_Exp
-
-        # Print shapes for debugging
-        # print("x.shape before reshape:", x.shape)
-        # print("y.shape before reshape:", y.shape)
-
-        # Reshape x and y from (B, C, 1, 1) to (B, C)
-        x = x.view(x.shape[0], x.shape[1])
-        xExp = xExp.view(xExp.shape[0], xExp.shape[1])
-        xp = xp.view(xp.shape[0], xp.shape[1])
-        y = y.view(y.shape[0], y.shape[1])
-
-        # invariance loss
-        # repr_loss = F.mse_loss(x, y)
-        repr_loss = F.smooth_l1_loss(xp, y)
-
-        # Normalize features
-        x = x - x.mean(dim=0, keepdim=True)
-        xExp = xExp - xExp.mean(dim=0, keepdim=True)
-        xp = xp - xp.mean(dim=0, keepdim=True)
-        y = y - y.mean(dim=0, keepdim=True)
-
-        # print("x.shape after reshape:", x.shape)
-        # print("y.shape after reshape:", y.shape)
-
-        # Ensure x and y have the expected shapes
-        # if x.ndim != 2 or y.ndim != 2:
-        #     raise ValueError("Expected 2D tensors for x and y")
-
-        # if x.shape != y.shape:
-        #     raise ValueError(f"Shape mismatch: x.shape = {x.shape}, y.shape = {y.shape}")
-
-        batch_size = x.shape[0]
-        D = xExp.shape[1]
-
-        # variance loss
-        # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
-        # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
-        # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
-
-        # covariance loss
-        # Use mT instead of T for transposing
-        cov_x = (xExp.mT @ xExp) / (batch_size - 1)
-
-        cov_loss = self.off_diagonal(cov_x).pow_(2).sum().div(D) 
-        # + self.off_diagonal(cov_y).pow_(2).sum().div(D)
-
-        # v_scale = 2.5
-        i_scale = 10000.0
-        c_scale = 400.0
-
-
-        inv_loss = i_scale * repr_loss
-
-        loss = \
-            inv_loss + \
-            c_scale* cov_loss
-
-        return loss, inv_loss
-
-    def __call__(self, data):
-        """
-        args:
-            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
-                    'test_proposals', 'proposal_iou' and 'test_label'.
-
-        returns:
-            loss    - the training loss
-            stats  -  dict containing detailed losses
-        """
-        # Run network
-
-        cls_filter_context, breg_filter_context, cls_filter_context_Exp, breg_filter_context_Exp, cls_filter_context_p, breg_filter_context_p, \
-                cls_filter_target, breg_filter_target= \
-                                   self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            train_label=data['train_label'],
-                                            train_ltrb_target=data['train_ltrb_target'])
-
-        ### Note that loss_X_filter is already added to inv_loss_x
-        loss_cls_filter, inv_loss_c = self.loss_fn(cls_filter_context, cls_filter_context_Exp, cls_filter_context_p, cls_filter_target)
-        loss_breg_filter, inv_loss_b = self.loss_fn(breg_filter_context, breg_filter_context_Exp, breg_filter_context_p, breg_filter_target)
-
-        scale = 1
-
-        total_inv_loss = inv_loss_c + inv_loss_b
-
-        loss = scale * loss_cls_filter + scale * loss_breg_filter
-        # loss = self.loss_weight['giou'] * loss_cls_filter + self.loss_weight['test_clf'] * loss_breg_filter
-
-        diff_loss_invloss = loss - total_inv_loss
-
-        if torch.isnan(loss):
-            raise ValueError('NaN detected in loss')
-
-        stats = {'Loss/total': loss.item(),
-                 'Loss/loss_cls_filter': loss_cls_filter.item(),
-                 'Loss/loss_breg_filter': loss_breg_filter.item(),
-                 'Loss/weighted_loss_cls_filter': scale * loss_cls_filter.item(),
-                 'Loss/weighted_loss_breg_filter': scale * loss_breg_filter.item(),
-                 'Loss/total_inv_loss': scale * total_inv_loss.item(),
-                 'Loss/diff_loss_invloss': scale * diff_loss_invloss.item(),
-                 }
+        stats["ClfTrain/test_loss"] = clf_loss_test.item()
+        if len(clf_losses_test) > 0:
+            stats["ClfTrain/test_init_loss"] = clf_losses_test[0].item()
+            if len(clf_losses_test) > 2:
+                stats["ClfTrain/test_iter_loss"] = sum(clf_losses_test[1:-1]).item() / (
+                    len(clf_losses_test) - 2
+                )
 
         return loss, stats
 
 
+class KYSActor(BaseActor):
+    """Actor for training KYS model"""
 
-    """Actor for training the DiMP network."""
-    def __init__(self, net, objective, loss_weight=None):
+    def __init__(self, net, objective, loss_weight=None, dimp_jitter_fn=None):
         super().__init__(net, objective)
-        if loss_weight is None:
-            loss_weight = {'bb_ce': 1.0}
         self.loss_weight = loss_weight
 
-        print("ToMPActor_JEPAs1_vicregExpwovc800x_norm2_cexp")
+        self.dimp_jitter_fn = dimp_jitter_fn
 
-    def off_diagonal(self, x):
-        n, m = x.shape
-        assert n == m
-        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+        # TODO set it somewhere
+        self.device = torch.device("cuda:0")
 
-    def loss_fn(self, x, xExp, xp, y):
+    def __call__(self, data):
+        sequence_length = data["test_images"].shape[0]
+        num_sequences = data["test_images"].shape[1]
 
-        # x --> cls_filter_context 
-        # xExp -->  cls_filter_context_Exp
-        # xp -->  cls_filter_context_p
-        # y -->  cls_filter_target
-        # yExp -->  cls_filter_target_Exp
+        valid_samples = data["test_valid_image"].to(self.device)
+        test_visibility = data["test_visible_ratio"].to(self.device)
 
-        # Print shapes for debugging
-        # print("x.shape before reshape:", x.shape)
-        # print("y.shape before reshape:", y.shape)
+        # Initialize loss variables
+        clf_loss_test_all = torch.zeros(num_sequences, sequence_length - 1).to(self.device)
+        clf_loss_test_orig_all = torch.zeros(num_sequences, sequence_length - 1).to(self.device)
+        dimp_loss_test_all = torch.zeros(num_sequences, sequence_length - 1).to(self.device)
+        test_clf_acc = 0
+        dimp_clf_acc = 0
 
-        # Reshape x and y from (B, C, 1, 1) to (B, C)
-        x = x.view(x.shape[0], x.shape[1])
-        xExp = xExp.view(xExp.shape[0], xExp.shape[1])
-        xp = xp.view(xp.shape[0], xp.shape[1])
-        y = y.view(y.shape[0], y.shape[1])
+        test_tracked_correct = (
+            torch.zeros(num_sequences, sequence_length - 1).long().to(self.device)
+        )
+        test_seq_all_correct = torch.ones(num_sequences).to(self.device)
+        dimp_seq_all_correct = torch.ones(num_sequences).to(self.device)
 
-        # invariance loss
-        # repr_loss = F.mse_loss(x, y)
-        repr_loss = F.smooth_l1_loss(xp, y)
+        is_target_loss_all = torch.zeros(num_sequences, sequence_length - 1).to(self.device)
+        is_target_after_prop_loss_all = torch.zeros(num_sequences, sequence_length - 1).to(
+            self.device
+        )
 
-        # Normalize features
-        x = x - x.mean(dim=0, keepdim=True)
-        xExp = xExp - xExp.mean(dim=0, keepdim=True)
-        xp = xp - xp.mean(dim=0, keepdim=True)
-        y = y - y.mean(dim=0, keepdim=True)
+        # Initialize target model using the training frames
+        train_images = data["train_images"].to(self.device)
+        train_anno = data["train_anno"].to(self.device)
+        dimp_filters = self.net.train_classifier(train_images, train_anno)
 
-        # print("x.shape after reshape:", x.shape)
-        # print("y.shape after reshape:", y.shape)
+        # Track in the first test frame
+        test_image_cur = data["test_images"][0, ...].to(self.device)
+        backbone_feat_prev_all = self.net.extract_backbone_features(test_image_cur)
+        backbone_feat_prev = backbone_feat_prev_all[self.net.classification_layer]
+        backbone_feat_prev = backbone_feat_prev.view(
+            1, num_sequences, -1, backbone_feat_prev.shape[-2], backbone_feat_prev.shape[-1]
+        )
 
-        # Ensure x and y have the expected shapes
-        # if x.ndim != 2 or y.ndim != 2:
-        #     raise ValueError("Expected 2D tensors for x and y")
+        if self.net.motion_feat_extractor is not None:
+            motion_feat_prev = self.net.motion_feat_extractor(backbone_feat_prev_all).view(
+                1, num_sequences, -1, backbone_feat_prev.shape[-2], backbone_feat_prev.shape[-1]
+            )
+        else:
+            motion_feat_prev = backbone_feat_prev
 
-        # if x.shape != y.shape:
-        #     raise ValueError(f"Shape mismatch: x.shape = {x.shape}, y.shape = {y.shape}")
+        dimp_scores_prev = self.net.dimp_classifier.track_frame(dimp_filters, backbone_feat_prev)
 
-        batch_size = x.shape[0]
-        D = xExp.shape[1]
+        # Remove last row and col (added due to even kernel size in the target model)
+        dimp_scores_prev = dimp_scores_prev[:, :, :-1, :-1].contiguous()
 
-        # variance loss
-        # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
-        # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
-        # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+        # Set previous frame information
+        label_prev = data["test_label"][0:1, ...].to(self.device)
+        label_prev = label_prev[:, :, :-1, :-1].contiguous()
 
-        # covariance loss
-        # Use mT instead of T for transposing
-        cov_x = (xExp.mT @ xExp) / (batch_size - 1)
+        anno_prev = data["test_anno"][0:1, ...].to(self.device)
+        state_prev = None
 
-        cov_loss = self.off_diagonal(cov_x).pow_(2).sum().div(D) 
-        # + self.off_diagonal(cov_y).pow_(2).sum().div(D)
+        is_valid_prev = valid_samples[0, :].view(1, -1, 1, 1).byte()
 
-        # v_scale = 2.5
-        i_scale = 10000.0
-        c_scale = 800.0
+        # Loop over the sequence
+        for i in range(1, sequence_length):
+            test_image_cur = data["test_images"][i, ...].to(self.device)
+            test_label_cur = data["test_label"][i : i + 1, ...].to(self.device)
+            test_label_cur = test_label_cur[:, :, :-1, :-1].contiguous()
+
+            test_anno_cur = data["test_anno"][i : i + 1, ...].to(self.device)
+
+            # Extract features
+            backbone_feat_cur_all = self.net.extract_backbone_features(test_image_cur)
+            backbone_feat_cur = backbone_feat_cur_all[self.net.classification_layer]
+            backbone_feat_cur = backbone_feat_cur.view(
+                1, num_sequences, -1, backbone_feat_cur.shape[-2], backbone_feat_cur.shape[-1]
+            )
+
+            if self.net.motion_feat_extractor is not None:
+                motion_feat_cur = self.net.motion_feat_extractor(backbone_feat_cur_all).view(
+                    1, num_sequences, -1, backbone_feat_cur.shape[-2], backbone_feat_cur.shape[-1]
+                )
+            else:
+                motion_feat_cur = backbone_feat_cur
+
+            # Run target model
+            dimp_scores_cur = self.net.dimp_classifier.track_frame(dimp_filters, backbone_feat_cur)
+            dimp_scores_cur = dimp_scores_cur[:, :, :-1, :-1].contiguous()
+
+            # Jitter target model output for augmentation
+            jitter_info = None
+            if self.dimp_jitter_fn is not None:
+                dimp_scores_cur = self.dimp_jitter_fn(dimp_scores_cur, test_label_cur.clone())
+
+            # Input target model output along with previous frame information to the predictor
+            predictor_input_data = {
+                "input1": motion_feat_prev,
+                "input2": motion_feat_cur,
+                "label_prev": label_prev,
+                "anno_prev": anno_prev,
+                "dimp_score_prev": dimp_scores_prev,
+                "dimp_score_cur": dimp_scores_cur,
+                "state_prev": state_prev,
+                "jitter_info": jitter_info,
+            }
+
+            predictor_output = self.net.predictor(predictor_input_data)
+
+            predicted_resp = predictor_output["response"]
+            state_prev = predictor_output["state_cur"]
+            aux_data = predictor_output["auxiliary_outputs"]
+
+            is_valid = valid_samples[i, :].view(1, -1, 1, 1).byte()
+            uncertain_frame = (test_visibility[i, :].view(1, -1, 1, 1) < 0.75) * (
+                test_visibility[i, :].view(1, -1, 1, 1) > 0.25
+            )
+
+            is_valid = is_valid * ~uncertain_frame
+
+            # Calculate losses
+            clf_loss_test_new = self.objective["test_clf"](
+                predicted_resp, test_label_cur, test_anno_cur, valid_samples=is_valid
+            )
+            clf_loss_test_all[:, i - 1] = clf_loss_test_new.squeeze()
+
+            dimp_loss_test_new = self.objective["dimp_clf"](
+                dimp_scores_cur, test_label_cur, test_anno_cur, valid_samples=is_valid
+            )
+            dimp_loss_test_all[:, i - 1] = dimp_loss_test_new.squeeze()
+
+            if "fused_score_orig" in aux_data and "test_clf_orig" in self.loss_weight.keys():
+                aux_data["fused_score_orig"] = aux_data["fused_score_orig"].view(
+                    test_label_cur.shape
+                )
+                clf_loss_test_orig_new = self.objective["test_clf"](
+                    aux_data["fused_score_orig"],
+                    test_label_cur,
+                    test_anno_cur,
+                    valid_samples=is_valid,
+                )
+                clf_loss_test_orig_all[:, i - 1] = clf_loss_test_orig_new.squeeze()
+
+            if (
+                "is_target" in aux_data
+                and "is_target" in self.loss_weight.keys()
+                and "is_target" in self.objective.keys()
+            ):
+                is_target_loss_new = self.objective["is_target"](
+                    aux_data["is_target"], label_prev, is_valid_prev
+                )
+                is_target_loss_all[:, i - 1] = is_target_loss_new
+
+            if (
+                "is_target_after_prop" in aux_data
+                and "is_target_after_prop" in self.loss_weight.keys()
+                and "is_target" in self.objective.keys()
+            ):
+                is_target_after_prop_loss_new = self.objective["is_target"](
+                    aux_data["is_target_after_prop"], test_label_cur, is_valid
+                )
+                is_target_after_prop_loss_all[:, i - 1] = is_target_after_prop_loss_new
+
+            test_clf_acc_new, test_pred_correct = self.objective["clf_acc"](
+                predicted_resp, test_label_cur, valid_samples=is_valid
+            )
+            test_clf_acc += test_clf_acc_new
+
+            test_seq_all_correct = (
+                test_seq_all_correct * (test_pred_correct.long() | (1 - is_valid).long()).float()
+            )
+            test_tracked_correct[:, i - 1] = test_pred_correct
+
+            dimp_clf_acc_new, dimp_pred_correct = self.objective["clf_acc"](
+                dimp_scores_cur, test_label_cur, valid_samples=is_valid
+            )
+            dimp_clf_acc += dimp_clf_acc_new
+
+            dimp_seq_all_correct = (
+                dimp_seq_all_correct * (dimp_pred_correct.long() | (1 - is_valid).long()).float()
+            )
+
+            motion_feat_prev = motion_feat_cur.clone()
+            dimp_scores_prev = dimp_scores_cur.clone()
+            label_prev = test_label_cur.clone()
+            is_valid_prev = is_valid.clone()
+
+        # Compute average loss over the sequence
+        clf_loss_test = clf_loss_test_all.mean()
+        clf_loss_test_orig = clf_loss_test_orig_all.mean()
+        dimp_loss_test = dimp_loss_test_all.mean()
+        is_target_loss = is_target_loss_all.mean()
+        is_target_after_prop_loss = is_target_after_prop_loss_all.mean()
+
+        test_clf_acc /= sequence_length - 1
+        dimp_clf_acc /= sequence_length - 1
+        clf_loss_test_orig /= sequence_length - 1
+
+        test_seq_clf_acc = test_seq_all_correct.mean()
+        dimp_seq_clf_acc = dimp_seq_all_correct.mean()
+
+        clf_loss_test_w = self.loss_weight["test_clf"] * clf_loss_test
+        clf_loss_test_orig_w = self.loss_weight["test_clf_orig"] * clf_loss_test_orig
+        dimp_loss_test_w = self.loss_weight.get("dimp_clf", 0.0) * dimp_loss_test
+
+        is_target_loss_w = self.loss_weight.get("is_target", 0.0) * is_target_loss
+        is_target_after_prop_loss_w = (
+            self.loss_weight.get("is_target_after_prop", 0.0) * is_target_after_prop_loss
+        )
+
+        loss = (
+            clf_loss_test_w
+            + dimp_loss_test_w
+            + is_target_loss_w
+            + is_target_after_prop_loss_w
+            + clf_loss_test_orig_w
+        )
+
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/test_clf": clf_loss_test_w.item(),
+            "Loss/dimp_clf": dimp_loss_test_w.item(),
+            "Loss/raw/test_clf": clf_loss_test.item(),
+            "Loss/raw/test_clf_orig": clf_loss_test_orig.item(),
+            "Loss/raw/dimp_clf": dimp_loss_test.item(),
+            "Loss/raw/test_clf_acc": test_clf_acc.item(),
+            "Loss/raw/dimp_clf_acc": dimp_clf_acc.item(),
+            "Loss/raw/is_target": is_target_loss.item(),
+            "Loss/raw/is_target_after_prop": is_target_after_prop_loss.item(),
+            "Loss/raw/test_seq_acc": test_seq_clf_acc.item(),
+            "Loss/raw/dimp_seq_acc": dimp_seq_clf_acc.item(),
+        }
+
+        return loss, stats
 
 
-        inv_loss = i_scale * repr_loss
+class TargetCandiateMatchingActor(BaseActor):
+    """Actor for training the KeepTrack network."""
 
-        loss = \
-            inv_loss + \
-            c_scale* cov_loss
-
-        return loss, inv_loss
+    def __init__(self, net, objective):
+        super().__init__(net, objective)
 
     def __call__(self, data):
         """
         args:
-            data - The input data, should contain the fields 'train_images', 'test_images', 'train_anno',
-                    'test_proposals', 'proposal_iou' and 'test_label'.
-
+            data - The input data.
         returns:
             loss    - the training loss
             stats  -  dict containing detailed losses
         """
-        # Run network
 
-        cls_filter_context, breg_filter_context, cls_filter_context_Exp, breg_filter_context_Exp, cls_filter_context_p, breg_filter_context_p, \
-                cls_filter_target, breg_filter_target= \
-                                   self.net(train_imgs=data['train_images'],
-                                            test_imgs=data['test_images'],
-                                            train_bb=data['train_anno'],
-                                            train_label=data['train_label'],
-                                            train_ltrb_target=data['train_ltrb_target'])
+        preds = self.net(**data)
 
-        ### Note that loss_X_filter is already added to inv_loss_x
-        loss_cls_filter, inv_loss_c = self.loss_fn(cls_filter_context, cls_filter_context_Exp, cls_filter_context_p, cls_filter_target)
-        loss_breg_filter, inv
+        # Classification losses for the different optimization iterations
+        losses = self.objective["target_candidate_matching"](**data, **preds)
+
+        # Total loss
+        loss = losses["total"].mean()
+
+        # Log stats
+        stats = {
+            "Loss/total": loss.item(),
+            "Loss/nll_pos": losses["nll_pos"].mean().item(),
+            "Loss/nll_neg": losses["nll_neg"].mean().item(),
+            "Loss/num_matchable": losses["num_matchable"].mean().item(),
+            "Loss/num_unmatchable": losses["num_unmatchable"].mean().item(),
+            "Loss/sinkhorn_norm": losses["sinkhorn_norm"].mean().item(),
+            "Loss/bin_score": losses["bin_score"].item(),
+        }
+
+        if hasattr(self.objective["target_candidate_matching"], "metrics"):
+            metrics = self.objective["target_candidate_matching"].metrics(**data, **preds)
+
+            for key, val in metrics.items():
+                stats[key] = torch.mean(val[~torch.isnan(val)]).item()
+
+        return loss, stats
