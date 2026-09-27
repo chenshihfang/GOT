@@ -1,11 +1,9 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 # This is the GOT-JEPA inference protocol.
 # This code was created by a human developer,
 # refined with AI assistance for clarity and cleanup before release,
 # and validated through human evaluation.
-
 """GOT-JEPA online tracking and point tracking adaptation.
 
 Input images are RGB arrays (H, W, 3); public boxes use (x, y, w, h).
@@ -45,10 +43,7 @@ import cv2
 import torchvision.transforms.functional as fn
 
 # torch.backends.cudnn.deterministic = True
-
 # CUDA_VISIBLE_DEVICES=0 python pytracking/run_video.py tomp aaa  checkpoints/otb_Human4.mp4 --debug 1
-
-
 # DinoPatch = 16
 # DinoPatch = 18
 DinoPatch = 27
@@ -67,7 +62,6 @@ class ToMP(BaseTracker):
     multiobj_mode = "parallel"
 
     # Initialization
-
     def initialize_features(self):
         if not getattr(self, "features_initialized", False):
             self.params.net.initialize()
@@ -238,7 +232,6 @@ class ToMP(BaseTracker):
         return reg_targets_per_im
 
     # Per-frame tracking
-
     def track(self, image, info: dict = None) -> dict:
         """Localize the target and update online tracking state for one frame.
 
@@ -656,7 +649,6 @@ class ToMP(BaseTracker):
         self.visdom.register(self.debug_info, "info_dict", 1, "Status")
 
     # Localization and coordinate transforms
-
     def direct_bbox_regression(self, bbox_preds, sample_coords, score_loc, scores_raw):
         shifts_x = torch.arange(
             0,
@@ -977,13 +969,11 @@ class ToMP(BaseTracker):
         return backbone_feat, patch_coords, im_patches_378, im_patches.cuda()
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         with torch.no_grad():
             return self.net.get_backbone_head_feat(backbone_feat)
 
     # Initial samples and online memory
-
     def generate_init_samples(self, im: torch.Tensor) -> TensorList:
         """Perform data augmentation to generate initial training samples."""
 
@@ -1331,7 +1321,6 @@ class ToMP(BaseTracker):
             self.visdom.register((image, box), "Tracking", 1, "Tracking")
 
     # Image preprocessing and visualization
-
     def infer_im_2_crop_tensor(self, tmp_imm_0, gt, in_RGB2BGR=0, im_size=DinoPatch * 14, norm=1):
 
         x, y, w, h = gt.int()

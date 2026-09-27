@@ -1,6 +1,5 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 """Legacy PiVOT online tracking with visual prompting.
 
 Input images are RGB arrays (H, W, 3); public boxes use (x, y, w, h).
@@ -47,7 +46,6 @@ class ToMP(BaseTracker):
     multiobj_mode = "parallel"
 
     # Initialization
-
     def initialize_features(self):
         if not getattr(self, "features_initialized", False):
             self.params.net.initialize()
@@ -166,7 +164,7 @@ class ToMP(BaseTracker):
             self.init_template = torch.empty((2, 3), dtype=torch.int64)
 
             # all learned weight will load from pretrained checkpoint in model, not in init self.net
-
+        # CLIP: initialize the crop storage used by visual prompting.
         self.dclip_train_imgs = torch.empty((2, 3), dtype=torch.int64)
         print("self.params.use_SRmask", self.params.use_SRmask)
 
@@ -275,7 +273,6 @@ class ToMP(BaseTracker):
         return sam_pos
 
     # Per-frame tracking
-
     def track(self, image, info: dict = None) -> dict:
         """Localize the target and update online tracking state for one frame.
 
@@ -293,12 +290,10 @@ class ToMP(BaseTracker):
         if self.frame_num % 20 == 0:
             print(self.frame_num)
         # sys.stdout.write(str(self.frame_num))
-
         # Convert image
         im = numpy_to_torch(image)
 
         # ------- LOCALIZATION ------- #
-
         # Extract backbone features
         backbone_feat, sample_coords, im_patches = self.extract_backbone_features(
             im,
@@ -310,6 +305,7 @@ class ToMP(BaseTracker):
         # Extract classification features
         test_x = self.get_backbone_head_feat(backbone_feat)
 
+        # CLIP: prepare test features and image patches for prompt generation.
         test_feat_head = test_x
 
         im_patches = im_patches.cuda()
@@ -322,6 +318,7 @@ class ToMP(BaseTracker):
         if self.dclip_train_imgs.dim() == 5 and self.params.use_SRmask:
             with torch.no_grad():
 
+                # SRopt input features: choose crop features for prompt optimization.
                 if self.net.train_crop_feat:
 
                     dc_train_feat = self.extract_backbone_features_tiny(
@@ -364,6 +361,7 @@ class ToMP(BaseTracker):
 
                             pre_boxwh_list.append([int(bbox[2].item()), int(bbox[3].item())])
 
+                    # Fixed height/width: optionally replace candidate box sizes with the previous size.
                     if self.usefixPrewh == 1:
                         for idx, ele in enumerate(pre_boxwh_list):
 
@@ -396,6 +394,7 @@ class ToMP(BaseTracker):
         # Compute classification scores
         scores_raw, bbox_preds = self.classify_target(test_x)
 
+        # CLIP: visualize the classification score map when requested.
         if self.show:
             cv2.namedWindow("scores_raw", cv2.WINDOW_NORMAL)  # search region tensor
             cv2.imshow(
@@ -429,7 +428,6 @@ class ToMP(BaseTracker):
                 self.search_area_rescaling()
 
         # ------- UPDATE ------- #
-
         update_flag = flag not in ["not_found", "uncertain"]
         hard_negative = flag == "hard_negative"
         learning_rate = (
@@ -475,6 +473,7 @@ class ToMP(BaseTracker):
         else:
             output_state = new_state.tolist()
 
+        # CLIP: update the stored crops used by SRmask visual prompting.
         if self.params.use_SRmask:
             if self.params.bg_info:
                 try:
@@ -614,7 +613,6 @@ class ToMP(BaseTracker):
         self.visdom.register(self.debug_info, "info_dict", 1, "Status")
 
     # Localization and coordinate transforms
-
     def direct_bbox_regression(self, bbox_preds, sample_coords, score_loc, scores_raw):
         shifts_x = torch.arange(0, self.img_sample_sz[0], step=16, dtype=torch.float32)
         shifts_y = torch.arange(0, self.img_sample_sz[1], step=16, dtype=torch.float32)
@@ -741,6 +739,7 @@ class ToMP(BaseTracker):
 
         if self.params.get("advanced_localization", False):
 
+            # Use advanced localization when enabled in the tracker parameters.
             return self.localize_advanced(scores, sample_pos, sample_scales)
 
         # Get maximum
@@ -877,13 +876,11 @@ class ToMP(BaseTracker):
         return backbone_feat
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         with torch.no_grad():
             return self.net.get_backbone_head_feat(backbone_feat)
 
     # Initial samples and online memory
-
     def generate_init_samples(self, im: torch.Tensor) -> TensorList:
         """Perform data augmentation to generate initial training samples."""
 
@@ -1194,7 +1191,6 @@ class ToMP(BaseTracker):
         # Get classification features
         x = self.get_backbone_head_feat(init_backbone_feat)
         # x = init_backbone_feat
-
         # Add the dropout augmentation here, since it requires extraction of the classification features
         if "dropout" in self.params.augmentation and self.params.get("use_augmentation", True):
             num, prob = self.params.augmentation["dropout"]
@@ -1248,7 +1244,7 @@ class ToMP(BaseTracker):
             self.visdom.register((image, box), "Tracking", 1, "Tracking")
 
     # Image preprocessing and visualization
-
+    # CLIP preprocessing: crop, resize and optionally normalize an image region.
     def infer_im_2_crop_tensor(self, tmp_imm_0, gt, in_RGB2BGR=0, im_size=288, norm=1):
 
         x, y, w, h = gt.int()

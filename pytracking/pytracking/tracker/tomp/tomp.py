@@ -1,11 +1,9 @@
 # The core code logic was originally implemented by a human developer.
 # Codex was used for post-publication refactoring, cleanup, and code quality improvements.
-
 # This is the GOT-Edit inference protocol that is compatible with VGGT/DA3.
 # This code was created by a human developer,
 # refined with AI assistance (ChatGPT) for clarity and cleanup before release,
 # and validated through human evaluation.
-
 """GOT-Edit online tracker with semantic and geometry feature extraction.
 
 Input images are RGB arrays (H, W, 3). Public initialize/track methods use
@@ -96,7 +94,6 @@ class ToMP(BaseTracker):
         self._vggt_stream = None
 
     # Initialization
-
     def initialize_features(self):
         if not getattr(self, "features_initialized", False):
             self.params.net.initialize()
@@ -274,7 +271,6 @@ class ToMP(BaseTracker):
         return reg_targets_per_im
 
     # Per-frame tracking
-
     def track(self, image, info: dict = None) -> dict:
         """Localize the target and update online tracking state for one frame.
 
@@ -391,7 +387,6 @@ class ToMP(BaseTracker):
         self.visdom.register(self.debug_info, "info_dict", 1, "Status")
 
     # Localization and coordinate transforms
-
     def direct_bbox_regression(self, bbox_preds, sample_coords, score_loc, scores_raw):
         shifts_x = torch.arange(
             0,
@@ -852,13 +847,11 @@ class ToMP(BaseTracker):
             )
 
     # Shared backbone/head interface
-
     def get_backbone_head_feat(self, backbone_feat):
         with torch.no_grad():
             return self.net.get_backbone_head_feat(backbone_feat)
 
     # Initial samples and online memory
-
     def generate_init_samples(self, im: torch.Tensor) -> TensorList:
         """Perform data augmentation to generate initial training samples. (path during init)"""
         mode = self.params.get("border_mode", "replicate")
@@ -1172,7 +1165,6 @@ class ToMP(BaseTracker):
             self.visdom.register((image, box), "Tracking", 1, "Tracking")
 
     # Image preprocessing and visualization
-
     def infer_im_2_crop_tensor(
         self, tmp_imm_0, gt, in_RGB2BGR=0, im_size=DinoPatch * DinoStride, norm=1
     ):
